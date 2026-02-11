@@ -1,0 +1,86 @@
+name: 'MTCVCTM - Generate VCTM'
+description: 'Generate Verifiable Credential Type Metadata from Markdown files'
+author: 'sirosfoundation'
+
+branding:
+  icon: 'file-text'
+  color: 'blue'
+
+inputs:
+  input-dir:
+    description: 'Directory containing markdown files'
+    required: false
+    default: '.'
+  output-dir:
+    description: 'Output directory for VCTM files'
+    required: false
+    default: '.'
+  base-url:
+    description: 'Base URL for generating image URLs with integrity'
+    required: false
+    default: ''
+  vctm-branch:
+    description: 'Branch name to commit VCTM files to'
+    required: false
+    default: 'vctm'
+  commit-message:
+    description: 'Commit message for VCTM updates'
+    required: false
+    default: 'Update VCTM files [skip ci]'
+  github-token:
+    description: 'GitHub token for pushing to vctm branch'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  registry-path:
+    description: 'Path to the generated registry file'
+    value: ${{ steps.generate.outputs.registry-path }}
+  credential-count:
+    description: 'Number of credentials processed'
+    value: ${{ steps.generate.outputs.credential-count }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+
+    - name: Build mtcvctm
+      shell: bash
+      run: |
+        cd ${{ github.action_path }}
+        go build -o mtcvctm ./cmd/mtcvctm
+
+    - name: Generate VCTM files
+      id: generate
+      shell: bash
+      run: |
+        ${{ github.action_path }}/mtcvctm batch \
+          --input "${{ inputs.input-dir }}" \
+          --output "${{ inputs.output-dir }}" \
+          --base-url "${{ inputs.base-url }}" \
+          --vctm-branch "${{ inputs.vctm-branch }}" \
+          --commit-message "${{ inputs.commit-message }}"
+        
+        echo "registry-path=${{ inputs.output-dir }}/.well-known/vctm-registry.json" >> $GITHUB_OUTPUT
+
+    - name: Configure Git
+      if: inputs.vctm-branch != ''
+      shell: bash
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Commit and push to vctm branch
+      if: inputs.vctm-branch != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        git checkout --orphan ${{ inputs.vctm-branch }} || git checkout ${{ inputs.vctm-branch }}
+        git add ${{ inputs.output-dir }}
+        git commit -m "${{ inputs.commit-message }}" || echo "No changes to commit"
+        git push origin ${{ inputs.vctm-branch }} --force-with-lease || git push origin ${{ inputs.vctm-branch }}

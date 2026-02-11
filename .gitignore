@@ -1,0 +1,27 @@
+# Binary
+mtcvctm
+
+# Generated VCTM files
+*.vctm
+
+# Coverage
+coverage.out
+coverage.html
+
+# Build artifacts
+dist/
+__debug_bin*
+
+# Go vendor (if used)
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
