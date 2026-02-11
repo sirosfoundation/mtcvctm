@@ -194,53 +194,40 @@ func (p *Parser) ToVCTM(parsed *ParsedMarkdown) (*vctm.VCTM, error) {
 	// Add display properties
 	if parsed.Title != "" || parsed.Description != "" {
 		display := vctm.DisplayProperties{
-			Lang:        p.config.Language,
+			Locale:      p.config.Language,
 			Name:        parsed.Title,
 			Description: parsed.Description,
 		}
 
-		// Add logo if there's a primary image
-		if len(parsed.Images) > 0 {
-			logo := p.imageToLogo(parsed.Images[0])
-			display.Logo = logo
-		}
-
-		// Extract colors from metadata
-		if bg, ok := parsed.Metadata["background_color"]; ok {
-			display.BackgroundColor = strings.Trim(bg, "\"")
-		}
-		if tc, ok := parsed.Metadata["text_color"]; ok {
-			display.TextColor = strings.Trim(tc, "\"")
+		// Add rendering if there are images or colors
+		rendering := p.buildRendering(parsed)
+		if rendering != nil {
+			display.Rendering = rendering
 		}
 
 		v.Display = []vctm.DisplayProperties{display}
 	}
 
-	// Add claims
+	// Add claims as array with path (draft 12 format)
 	if len(parsed.Claims) > 0 {
-		v.Claims = make(map[string]vctm.ClaimMetadata)
+		v.Claims = make([]vctm.ClaimMetadataEntry, 0, len(parsed.Claims))
 		for name, claim := range parsed.Claims {
-			cm := vctm.ClaimMetadata{
+			entry := vctm.ClaimMetadataEntry{
+				Path:      []interface{}{name},
 				Mandatory: claim.Mandatory,
-				ValueType: claim.Type,
 				SD:        claim.SD,
 			}
 			if claim.Description != "" {
-				cm.Display = []vctm.ClaimDisplay{
+				entry.Display = []vctm.ClaimDisplay{
 					{
-						Lang:        p.config.Language,
+						Locale:      p.config.Language,
 						Label:       claim.Name,
 						Description: claim.Description,
 					},
 				}
 			}
-			v.Claims[name] = cm
+			v.Claims = append(v.Claims, entry)
 		}
-	}
-
-	// Add rendering if there are images
-	if len(parsed.Images) > 0 && p.config.BaseURL != "" {
-		v.Rendering = p.buildRendering(parsed.Images)
 	}
 
 	// Override VCT from metadata if present
@@ -248,12 +235,12 @@ func (p *Parser) ToVCTM(parsed *ParsedMarkdown) (*vctm.VCTM, error) {
 		v.VCT = vctVal
 	}
 
-	// Override from extends metadata
+	// Override from extends metadata (now single URI in draft 12)
 	if extends, ok := parsed.Metadata["extends"]; ok {
-		v.Extends = strings.Split(extends, ",")
-		for i := range v.Extends {
-			v.Extends[i] = strings.TrimSpace(v.Extends[i])
-		}
+		v.Extends = strings.TrimSpace(extends)
+	}
+	if extendsIntegrity, ok := parsed.Metadata["extends#integrity"]; ok {
+		v.ExtendsIntegrity = strings.TrimSpace(extendsIntegrity)
 	}
 
 	return v, nil
@@ -300,20 +287,50 @@ func (p *Parser) calculateIntegrity(path string) (string, error) {
 	return "sha256-" + base64.StdEncoding.EncodeToString(hash.Sum(nil)), nil
 }
 
-// buildRendering builds rendering information from images
-func (p *Parser) buildRendering(images []ImageRef) *vctm.Rendering {
-	rendering := &vctm.Rendering{}
+// buildRendering builds rendering information from parsed markdown
+func (p *Parser) buildRendering(parsed *ParsedMarkdown) *vctm.Rendering {
+	// Skip rendering if no base URL configured
+	if p.config.BaseURL == "" && len(parsed.Images) > 0 {
+		return nil
+	}
 
-	// First image as simple rendering logo
-	if len(images) > 0 {
-		rendering.Simple = &vctm.SimpleRendering{
-			Logo: p.imageToLogo(images[0]),
+	rendering := &vctm.Rendering{}
+	hasContent := false
+
+	// Build simple rendering
+	simple := &vctm.SimpleRendering{}
+
+	// First image as logo
+	if len(parsed.Images) > 0 {
+		simple.Logo = p.imageToLogo(parsed.Images[0])
+		hasContent = true
+	}
+
+	// Extract colors from metadata
+	if bg, ok := parsed.Metadata["background_color"]; ok {
+		simple.BackgroundColor = strings.Trim(bg, "\"")
+		hasContent = true
+	}
+	if tc, ok := parsed.Metadata["text_color"]; ok {
+		simple.TextColor = strings.Trim(tc, "\"")
+		hasContent = true
+	}
+
+	// Check for background image in metadata
+	if bgImg, ok := parsed.Metadata["background_image"]; ok {
+		simple.BackgroundImage = &vctm.BackgroundImage{
+			URI: strings.Trim(bgImg, "\""),
 		}
+		hasContent = true
+	}
+
+	if hasContent {
+		rendering.Simple = simple
 	}
 
 	// SVG templates
 	var svgTemplates []vctm.SVGTemplate
-	for _, img := range images {
+	for _, img := range parsed.Images {
 		if strings.HasSuffix(strings.ToLower(img.Path), ".svg") {
 			tmpl := vctm.SVGTemplate{
 				URI: p.buildImageURL(img.Path),
@@ -327,6 +344,11 @@ func (p *Parser) buildRendering(images []ImageRef) *vctm.Rendering {
 
 	if len(svgTemplates) > 0 {
 		rendering.SVGTemplates = svgTemplates
+	}
+
+	// Return nil if no rendering content
+	if rendering.Simple == nil && len(rendering.SVGTemplates) == 0 {
+		return nil
 	}
 
 	return rendering

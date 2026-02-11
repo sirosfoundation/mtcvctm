@@ -31,14 +31,14 @@ func TestVCTM_Validate(t *testing.T) {
 				Description: "A credential for identity verification",
 				Display: []DisplayProperties{
 					{
-						Lang: "en-US",
-						Name: "Identity Credential",
+						Locale: "en-US",
+						Name:   "Identity Credential",
 					},
 				},
-				Claims: map[string]ClaimMetadata{
-					"given_name": {
+				Claims: []ClaimMetadataEntry{
+					{
+						Path:      []interface{}{"given_name"},
 						Mandatory: true,
-						ValueType: "string",
 					},
 				},
 			},
@@ -63,25 +63,29 @@ func TestVCTM_ToJSON(t *testing.T) {
 		Description: "A test credential",
 		Display: []DisplayProperties{
 			{
-				Lang:        "en-US",
+				Locale:      "en-US",
 				Name:        "Test Credential",
 				Description: "A test credential for testing",
-				Logo: &Logo{
-					URI:     "https://example.com/logo.png",
-					AltText: "Test Logo",
+				Rendering: &Rendering{
+					Simple: &SimpleRendering{
+						Logo: &Logo{
+							URI:     "https://example.com/logo.png",
+							AltText: "Test Logo",
+						},
+						BackgroundColor: "#ffffff",
+						TextColor:       "#000000",
+					},
 				},
-				BackgroundColor: "#ffffff",
-				TextColor:       "#000000",
 			},
 		},
-		Claims: map[string]ClaimMetadata{
-			"given_name": {
+		Claims: []ClaimMetadataEntry{
+			{
+				Path:      []interface{}{"given_name"},
 				Mandatory: true,
-				ValueType: "string",
 				Display: []ClaimDisplay{
 					{
-						Lang:  "en-US",
-						Label: "First Name",
+						Locale: "en-US",
+						Label:  "First Name",
 					},
 				},
 			},

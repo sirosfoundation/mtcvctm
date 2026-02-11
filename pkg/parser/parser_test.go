@@ -136,10 +136,19 @@ func TestParser_ToVCTM(t *testing.T) {
 		t.Errorf("Expected 1 claim, got %d", len(vctmDoc.Claims))
 	}
 
-	if claim, ok := vctmDoc.Claims["given_name"]; !ok {
+	// Find given_name claim in array
+	var foundClaim bool
+	for _, claim := range vctmDoc.Claims {
+		if len(claim.Path) > 0 && claim.Path[0] == "given_name" {
+			foundClaim = true
+			if !claim.Mandatory {
+				t.Error("given_name should be mandatory")
+			}
+			break
+		}
+	}
+	if !foundClaim {
 		t.Error("Missing given_name claim")
-	} else if !claim.Mandatory {
-		t.Error("given_name should be mandatory")
 	}
 }
 

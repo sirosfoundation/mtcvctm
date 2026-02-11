@@ -1,4 +1,24 @@
-# mtcvctm - Markdown To Create Verifiable Credential Type Metadata
+<p align="center">
+  <img src="static/siros-logo.svg" alt="Siros Foundation" width="120" height="120">
+</p>
+
+<h1 align="center">mtcvctm</h1>
+
+<p align="center">
+  <strong>Markdown To Create Verifiable Credential Type Metadata</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/sirosfoundation/mtcvctm/actions/workflows/ci.yml"><img src="https://github.com/sirosfoundation/mtcvctm/actions/workflows/ci.yml/badge.svg" alt="Build Status"></a>
+  <a href="https://github.com/sirosfoundation/mtcvctm/actions/workflows/release.yml"><img src="https://github.com/sirosfoundation/mtcvctm/actions/workflows/release.yml/badge.svg" alt="Release"></a>
+  <a href="https://codecov.io/gh/sirosfoundation/mtcvctm"><img src="https://codecov.io/gh/sirosfoundation/mtcvctm/branch/main/graph/badge.svg" alt="codecov"></a>
+  <a href="https://goreportcard.com/report/github.com/sirosfoundation/mtcvctm"><img src="https://goreportcard.com/badge/github.com/sirosfoundation/mtcvctm" alt="Go Report Card"></a>
+  <a href="https://pkg.go.dev/github.com/sirosfoundation/mtcvctm"><img src="https://pkg.go.dev/badge/github.com/sirosfoundation/mtcvctm.svg" alt="Go Reference"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--2--Clause-blue.svg" alt="License"></a>
+  <a href="https://ghcr.io/sirosfoundation/mtcvctm"><img src="https://img.shields.io/badge/container-ghcr.io-blue" alt="Container"></a>
+</p>
+
+---
 
 A tool to generate VCTM (Verifiable Credential Type Metadata) files from markdown, as specified in [Section 6 of draft-ietf-oauth-sd-jwt-vc-11](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-11#section-6).
 
@@ -219,4 +239,4 @@ make docker-build
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+BSD 2-Clause License - Copyright (c) 2026 Siros Foundation. See [LICENSE](LICENSE) for details.
