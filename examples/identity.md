@@ -14,14 +14,22 @@ This credential contains basic identity information that can be used for identit
 
 ## Claims
 
-- `given_name` (string): The given name(s) of the holder [mandatory]
-- `family_name` (string): The family name of the holder [mandatory]
-- `birth_date` (date): Date of birth of the holder [sd=always]
-- `nationality` (string): Nationality of the holder
-- `personal_identifier` (string): Unique personal identifier [mandatory] [sd=always]
-- `place_of_birth` (string): Place of birth [sd=always]
-- `address` (object): Current address of the holder [sd=always]
-- `portrait` (image): Photograph of the holder [sd=always]
+- `given_name` "Given Name" (string): The given name(s) of the holder [mandatory]
+  - de-DE: "Vorname" - Der Vorname des Inhabers
+  - sv: "Förnamn" - Innehavarens förnamn
+- `family_name` "Family Name" (string): The family name of the holder [mandatory]
+  - de-DE: "Familienname" - Der Familienname des Inhabers
+  - sv: "Efternamn" - Innehavarens efternamn
+- `birth_date` "Date of Birth" (date): Date of birth of the holder [sd=always]
+  - de-DE: "Geburtsdatum" - Geburtsdatum des Inhabers
+  - sv: "Födelsedatum" - Innehavarens födelsedatum
+- `nationality` "Nationality" (string): Nationality of the holder
+  - de-DE: "Staatsangehörigkeit" - Staatsangehörigkeit des Inhabers
+  - sv: "Nationalitet" - Innehavarens nationalitet
+- `personal_identifier` "Personal ID" (string): Unique personal identifier [mandatory] [sd=always]
+- `place_of_birth` "Place of Birth" (string): Place of birth [sd=always]
+- `address` "Address" (object): Current address of the holder [sd=always]
+- `portrait` "Portrait Photo" (image): Photograph of the holder [sd=always]
 
 ## Issuer Requirements
 

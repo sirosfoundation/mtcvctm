@@ -154,14 +154,15 @@ func TestParser_ToVCTM(t *testing.T) {
 
 func TestParseClaimFromListItem(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     string
-		wantName  string
-		wantType  string
-		wantMand  bool
-		wantSD    string
-		wantDesc  string
-		wantMatch bool
+		name        string
+		input       string
+		wantName    string
+		wantType    string
+		wantMand    bool
+		wantSD      string
+		wantDesc    string
+		wantDisplay string
+		wantMatch   bool
 	}{
 		{
 			name:      "simple claim",
@@ -202,6 +203,25 @@ func TestParseClaimFromListItem(t *testing.T) {
 			input:     "This is just regular text",
 			wantMatch: false,
 		},
+		{
+			name:        "claim with display name",
+			input:       "`given_name` \"Given Name\" (string): The given name of the holder",
+			wantName:    "given_name",
+			wantType:    "string",
+			wantDesc:    "The given name of the holder",
+			wantDisplay: "Given Name",
+			wantMatch:   true,
+		},
+		{
+			name:        "claim with display name and mandatory",
+			input:       "`family_name` \"Family Name\" (string): The family name [mandatory]",
+			wantName:    "family_name",
+			wantType:    "string",
+			wantDesc:    "The family name",
+			wantDisplay: "Family Name",
+			wantMand:    true,
+			wantMatch:   true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -233,6 +253,9 @@ func TestParseClaimFromListItem(t *testing.T) {
 			}
 			if claim.Description != tt.wantDesc {
 				t.Errorf("Description = %q, want %q", claim.Description, tt.wantDesc)
+			}
+			if claim.DisplayName != tt.wantDisplay {
+				t.Errorf("DisplayName = %q, want %q", claim.DisplayName, tt.wantDisplay)
 			}
 		})
 	}
@@ -391,5 +414,146 @@ func TestParser_buildImageURL(t *testing.T) {
 				t.Errorf("buildImageURL() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseLocalizationFromListItem(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantLocale  string
+		wantLabel   string
+		wantDesc    string
+		wantMatch   bool
+	}{
+		{
+			name:       "full localization",
+			input:      `en-US: "Given Name" - The given name of the holder`,
+			wantLocale: "en-US",
+			wantLabel:  "Given Name",
+			wantDesc:   "The given name of the holder",
+			wantMatch:  true,
+		},
+		{
+			name:       "german localization",
+			input:      `de-DE: "Vorname" - Der Vorname des Inhabers`,
+			wantLocale: "de-DE",
+			wantLabel:  "Vorname",
+			wantDesc:   "Der Vorname des Inhabers",
+			wantMatch:  true,
+		},
+		{
+			name:       "label only",
+			input:      `sv: "Förnamn"`,
+			wantLocale: "sv",
+			wantLabel:  "Förnamn",
+			wantDesc:   "",
+			wantMatch:  true,
+		},
+		{
+			name:      "not a localization",
+			input:     "This is just regular text",
+			wantMatch: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			locale, loc, ok := parseLocalizationFromListItem(tt.input)
+
+			if !tt.wantMatch {
+				if ok {
+					t.Error("Expected no match")
+				}
+				return
+			}
+
+			if !ok {
+				t.Fatal("Expected match but got no match")
+			}
+
+			if locale != tt.wantLocale {
+				t.Errorf("Locale = %q, want %q", locale, tt.wantLocale)
+			}
+			if loc.Label != tt.wantLabel {
+				t.Errorf("Label = %q, want %q", loc.Label, tt.wantLabel)
+			}
+			if loc.Description != tt.wantDesc {
+				t.Errorf("Description = %q, want %q", loc.Description, tt.wantDesc)
+			}
+		})
+	}
+}
+
+func TestParser_ClaimsWithLocalization(t *testing.T) {
+	cfg := &config.Config{
+		Language: "en-US",
+		BaseURL:  "https://example.com",
+	}
+	p := NewParser(cfg)
+
+	content := []byte(`# Test Credential
+
+A test credential.
+
+## Claims
+
+- ` + "`given_name` \"Given Name\" (string): The given name [mandatory]" + `
+  - de-DE: "Vorname" - Der Vorname
+  - sv: "Förnamn" - Förnamnet
+- ` + "`family_name` (string): The family name" + `
+`)
+
+	parsed, err := p.ParseContent(content, "/test/credential.md")
+	if err != nil {
+		t.Fatalf("ParseContent() error = %v", err)
+	}
+
+	// Check given_name claim
+	claim, ok := parsed.Claims["given_name"]
+	if !ok {
+		t.Fatal("Missing given_name claim")
+	}
+
+	if claim.DisplayName != "Given Name" {
+		t.Errorf("DisplayName = %q, want %q", claim.DisplayName, "Given Name")
+	}
+
+	if !claim.Mandatory {
+		t.Error("given_name should be mandatory")
+	}
+
+	if len(claim.Localizations) != 2 {
+		t.Errorf("Expected 2 localizations, got %d", len(claim.Localizations))
+	}
+
+	if deLoc, ok := claim.Localizations["de-DE"]; ok {
+		if deLoc.Label != "Vorname" {
+			t.Errorf("German label = %q, want %q", deLoc.Label, "Vorname")
+		}
+	} else {
+		t.Error("Missing de-DE localization")
+	}
+
+	// Test VCTM output
+	vctmDoc, err := p.ToVCTM(parsed)
+	if err != nil {
+		t.Fatalf("ToVCTM() error = %v", err)
+	}
+
+	// Find given_name claim
+	var foundClaim bool
+	for _, c := range vctmDoc.Claims {
+		if len(c.Path) > 0 && c.Path[0] == "given_name" {
+			foundClaim = true
+			// Should have 3 display entries (en-US, de-DE, sv)
+			if len(c.Display) != 3 {
+				t.Errorf("Expected 3 display entries, got %d", len(c.Display))
+			}
+			break
+		}
+	}
+	if !foundClaim {
+		t.Error("Missing given_name claim in VCTM output")
 	}
 }

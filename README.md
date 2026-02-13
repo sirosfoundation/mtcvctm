@@ -81,8 +81,10 @@ A verifiable credential for identity verification.
 
 ## Claims
 
-- `given_name` (string): The given name of the holder [mandatory]
-- `family_name` (string): The family name of the holder [mandatory]
+- `given_name` "Given Name" (string): The given name of the holder [mandatory]
+  - de-DE: "Vorname" - Der Vorname des Inhabers
+  - sv: "Förnamn" - Innehavarens förnamn
+- `family_name` "Family Name" (string): The family name of the holder [mandatory]
 - `birth_date` (date): Date of birth [sd=always]
 - `nationality` (string): Nationality of the holder
 
@@ -107,14 +109,34 @@ The optional YAML front matter supports:
 Claims are defined in list items with the following format:
 
 ```
-- `claim_name` (type): Description [mandatory] [sd=always|never]
+- `claim_name` "Display Name" (type): Description [mandatory] [sd=always|never]
+  - locale: "Localized Label" - Localized description
 ```
 
 - **claim_name**: The claim identifier (required)
+- **"Display Name"**: Human-readable display label for the claim (optional)
 - **type**: The value type - `string`, `date`, `number`, etc. (default: `string`)
 - **Description**: Human-readable description
 - **[mandatory]**: Mark the claim as mandatory
 - **[sd=always|never]**: Selective disclosure setting
+
+#### Localization
+
+Add translations as nested list items under a claim:
+
+```markdown
+- `given_name` "Given Name" (string): The given name [mandatory]
+  - de-DE: "Vorname" - Der Vorname des Inhabers
+  - sv: "Förnamn" - Innehavarens förnamn
+  - fr: "Prénom" - Le prénom du titulaire
+```
+
+The format for localization items is:
+```
+- locale: "Label" - Description
+```
+
+Where `locale` is a BCP 47 language tag (e.g., `en-US`, `de-DE`, `sv`).
 
 ### Images
 

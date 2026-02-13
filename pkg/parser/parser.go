@@ -82,6 +82,21 @@ type ClaimDef struct {
 
 	// SD indicates selective disclosure
 	SD string
+
+	// DisplayName is the friendly display label for the claim
+	DisplayName string
+
+	// Localizations contains locale-specific display names and descriptions
+	Localizations map[string]ClaimLocalization
+}
+
+// ClaimLocalization contains localized display information for a claim
+type ClaimLocalization struct {
+	// Label is the display label in this locale
+	Label string
+
+	// Description is the description in this locale
+	Description string
 }
 
 // Parse parses a markdown file and returns the parsed structure
@@ -160,12 +175,10 @@ func (p *Parser) ParseContent(content []byte, basePath string) (*ParsedMarkdown,
 				AbsolutePath: absPath,
 			})
 
-		case *ast.ListItem:
-			// Try to extract claim definitions from list items
-			itemText := extractText(node, content)
-			if claim := parseClaimFromListItem(itemText); claim != nil {
-				parsed.Claims[claim.Name] = *claim
-			}
+		case *ast.List:
+			// Handle lists specially to capture claim localizations
+			parseClaimsList(node, content, parsed)
+			return ast.WalkSkipChildren, nil
 		}
 
 		return ast.WalkContinue, nil
@@ -181,6 +194,49 @@ func (p *Parser) ParseContent(content []byte, basePath string) (*ParsedMarkdown,
 	}
 
 	return parsed, nil
+}
+
+// parseClaimsList parses a list to extract claims with potential localizations
+func parseClaimsList(list *ast.List, content []byte, parsed *ParsedMarkdown) {
+	for item := list.FirstChild(); item != nil; item = item.NextSibling() {
+		listItem, ok := item.(*ast.ListItem)
+		if !ok {
+			continue
+		}
+
+		// Extract the first text content (the claim definition)
+		var claimText string
+		for child := listItem.FirstChild(); child != nil; child = child.NextSibling() {
+			if para, ok := child.(*ast.Paragraph); ok {
+				claimText = extractText(para, content)
+				break
+			} else if txt, ok := child.(*ast.TextBlock); ok {
+				claimText = extractText(txt, content)
+				break
+			}
+		}
+
+		claim := parseClaimFromListItem(claimText)
+		if claim == nil {
+			continue
+		}
+
+		// Look for nested list with localizations
+		for child := listItem.FirstChild(); child != nil; child = child.NextSibling() {
+			if nestedList, ok := child.(*ast.List); ok {
+				for nestedItem := nestedList.FirstChild(); nestedItem != nil; nestedItem = nestedItem.NextSibling() {
+					if nestedListItem, ok := nestedItem.(*ast.ListItem); ok {
+						locText := extractText(nestedListItem, content)
+						if locale, loc, ok := parseLocalizationFromListItem(locText); ok {
+							claim.Localizations[locale] = loc
+						}
+					}
+				}
+			}
+		}
+
+		parsed.Claims[claim.Name] = *claim
+	}
 }
 
 // ToVCTM converts parsed markdown to a VCTM document
@@ -217,15 +273,47 @@ func (p *Parser) ToVCTM(parsed *ParsedMarkdown) (*vctm.VCTM, error) {
 				Mandatory: claim.Mandatory,
 				SD:        claim.SD,
 			}
-			if claim.Description != "" {
-				entry.Display = []vctm.ClaimDisplay{
-					{
-						Locale:      p.config.Language,
-						Label:       claim.Name,
-						Description: claim.Description,
-					},
+
+			// Build display array with localizations
+			var displays []vctm.ClaimDisplay
+
+			// Add default locale display (from claim definition)
+			if claim.Description != "" || claim.DisplayName != "" {
+				defaultDisplay := vctm.ClaimDisplay{
+					Locale:      p.config.Language,
+					Description: claim.Description,
 				}
+				// Use display name if provided, otherwise fall back to claim name
+				if claim.DisplayName != "" {
+					defaultDisplay.Label = claim.DisplayName
+				} else {
+					defaultDisplay.Label = claim.Name
+				}
+				displays = append(displays, defaultDisplay)
 			}
+
+			// Add additional localizations from nested list items
+			for locale, loc := range claim.Localizations {
+				// Skip if this is the same as default locale (already added)
+				if locale == p.config.Language {
+					continue
+				}
+				display := vctm.ClaimDisplay{
+					Locale:      locale,
+					Label:       loc.Label,
+					Description: loc.Description,
+				}
+				// If label is empty but we have one, use the display name
+				if display.Label == "" && claim.DisplayName != "" {
+					display.Label = claim.DisplayName
+				}
+				displays = append(displays, display)
+			}
+
+			if len(displays) > 0 {
+				entry.Display = displays
+			}
+
 			v.Claims = append(v.Claims, entry)
 		}
 	}
@@ -414,8 +502,16 @@ func extractFrontMatter(content []byte) map[string]string {
 }
 
 // parseClaimFromListItem parses a claim definition from a list item
-// Expected format: `claim_name` (type): Description [mandatory] [sd=always|never]
-var claimPattern = regexp.MustCompile("^`([^`]+)`\\s*(?:\\(([^)]+)\\))?:?\\s*(.*)$")
+// Expected formats:
+//   - `claim_name` (type): Description [mandatory] [sd=always|never]
+//   - `claim_name` "Display Name" (type): Description [mandatory] [sd=always|never]
+//
+// For localized claims (sub-list items under a claim):
+//   - en-US: "Display Name" - Description
+//   - de-DE: "Anzeigename" - Beschreibung
+var claimPattern = regexp.MustCompile("^`([^`]+)`\\s*(?:\"([^\"]+)\")?\\s*(?:\\(([^)]+)\\))?:?\\s*(.*)$")
+// localePattern requires a colon after the locale code and either a quoted label or a dash with description
+var localePattern = regexp.MustCompile("^([a-zA-Z]{2,3}(?:-[a-zA-Z]{2,4})?):\\s*(?:\"([^\"]+)\")?\\s*(?:-\\s*)?(.*)$")
 
 func parseClaimFromListItem(text string) *ClaimDef {
 	matches := claimPattern.FindStringSubmatch(text)
@@ -424,9 +520,11 @@ func parseClaimFromListItem(text string) *ClaimDef {
 	}
 
 	claim := &ClaimDef{
-		Name:        matches[1],
-		Type:        matches[2],
-		Description: matches[3],
+		Name:          matches[1],
+		DisplayName:   matches[2],
+		Type:          matches[3],
+		Description:   matches[4],
+		Localizations: make(map[string]ClaimLocalization),
 	}
 
 	if claim.Type == "" {
@@ -451,6 +549,21 @@ func parseClaimFromListItem(text string) *ClaimDef {
 	claim.Description = strings.TrimSpace(claim.Description)
 
 	return claim
+}
+
+// parseLocalizationFromListItem parses localization from a sub-list item
+// Expected format: locale: "Label" - Description
+// e.g., en-US: "Given Name" - The given name
+func parseLocalizationFromListItem(text string) (locale string, loc ClaimLocalization, ok bool) {
+	matches := localePattern.FindStringSubmatch(text)
+	if matches == nil {
+		return "", ClaimLocalization{}, false
+	}
+
+	return matches[1], ClaimLocalization{
+		Label:       matches[2],
+		Description: strings.TrimSpace(matches[3]),
+	}, true
 }
 
 // CalculateIntegrity is a public helper to calculate SRI integrity for a file
