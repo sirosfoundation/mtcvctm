@@ -85,14 +85,14 @@ runs:
       run: |
         # Save output directory contents to temp location
         TEMP_DIR=$(mktemp -d)
-        cp -r "$OUTPUT_DIR"/* "$TEMP_DIR"/
+        cp -r "$OUTPUT_DIR"/. "$TEMP_DIR"/
         
         # Create orphan branch with only output contents at root
         git checkout --orphan "$VCTM_BRANCH" 2>/dev/null || git switch --orphan "$VCTM_BRANCH"
         git rm -rf . 2>/dev/null || true
         
-        # Copy output contents to repo root
-        cp -r "$TEMP_DIR"/* .
+        # Copy output contents to repo root (including hidden dirs like .well-known)
+        cp -r "$TEMP_DIR"/. .
         rm -rf "$TEMP_DIR"
         
         git add -A
