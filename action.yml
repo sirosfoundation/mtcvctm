@@ -79,8 +79,22 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+        VCTM_BRANCH: ${{ inputs.vctm-branch }}
+        COMMIT_MSG: ${{ inputs.commit-message }}
       run: |
-        git checkout --orphan ${{ inputs.vctm-branch }} || git checkout ${{ inputs.vctm-branch }}
-        git add ${{ inputs.output-dir }}
-        git commit -m "${{ inputs.commit-message }}" || echo "No changes to commit"
-        git push origin ${{ inputs.vctm-branch }} --force-with-lease || git push origin ${{ inputs.vctm-branch }}
+        # Save output directory contents to temp location
+        TEMP_DIR=$(mktemp -d)
+        cp -r "$OUTPUT_DIR"/* "$TEMP_DIR"/
+        
+        # Create orphan branch with only output contents at root
+        git checkout --orphan "$VCTM_BRANCH" 2>/dev/null || git switch --orphan "$VCTM_BRANCH"
+        git rm -rf . 2>/dev/null || true
+        
+        # Copy output contents to repo root
+        cp -r "$TEMP_DIR"/* .
+        rm -rf "$TEMP_DIR"
+        
+        git add -A
+        git commit -m "$COMMIT_MSG" || echo "No changes to commit"
+        git push origin "$VCTM_BRANCH" --force
