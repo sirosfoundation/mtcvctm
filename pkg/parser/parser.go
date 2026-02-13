@@ -17,6 +17,7 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/text"
+	"gopkg.in/yaml.v3"
 )
 
 // Parser parses markdown files and generates VCTM
@@ -52,6 +53,18 @@ type ParsedMarkdown struct {
 
 	// Metadata contains front matter or metadata extracted from the markdown
 	Metadata map[string]string
+
+	// DisplayLocalizations contains locale-specific display properties for the credential
+	DisplayLocalizations map[string]DisplayLocalization
+}
+
+// DisplayLocalization contains localized display properties for the credential
+type DisplayLocalization struct {
+	// Name is the localized credential name
+	Name string `yaml:"name"`
+
+	// Description is the localized credential description
+	Description string `yaml:"description"`
 }
 
 // ImageRef represents a reference to an image
@@ -82,6 +95,9 @@ type ClaimDef struct {
 
 	// SD indicates selective disclosure
 	SD string
+
+	// SvgId is the ID for SVG template reference
+	SvgId string
 
 	// DisplayName is the friendly display label for the claim
 	DisplayName string
@@ -124,7 +140,7 @@ func (p *Parser) ParseContent(content []byte, basePath string) (*ParsedMarkdown,
 	baseDir := filepath.Dir(basePath)
 
 	// Extract front matter if present
-	parsed.Metadata = extractFrontMatter(content)
+	parsed.Metadata, parsed.DisplayLocalizations = extractFrontMatter(content)
 
 	// Walk the AST to extract content
 	var currentSection string
@@ -262,6 +278,20 @@ func (p *Parser) ToVCTM(parsed *ParsedMarkdown) (*vctm.VCTM, error) {
 		}
 
 		v.Display = []vctm.DisplayProperties{display}
+
+		// Add localized display properties from front matter
+		for locale, loc := range parsed.DisplayLocalizations {
+			// Skip if this is the same as default locale (already added)
+			if locale == p.config.Language {
+				continue
+			}
+			localizedDisplay := vctm.DisplayProperties{
+				Locale:      locale,
+				Name:        loc.Name,
+				Description: loc.Description,
+			}
+			v.Display = append(v.Display, localizedDisplay)
+		}
 	}
 
 	// Add claims as array with path (draft 12 format)
@@ -272,6 +302,7 @@ func (p *Parser) ToVCTM(parsed *ParsedMarkdown) (*vctm.VCTM, error) {
 				Path:      []interface{}{name},
 				Mandatory: claim.Mandatory,
 				SD:        claim.SD,
+				SvgId:     claim.SvgId,
 			}
 
 			// Build display array with localizations
@@ -467,38 +498,46 @@ func extractText(node ast.Node, source []byte) string {
 	return strings.TrimSpace(buf.String())
 }
 
+// frontMatterData represents the YAML front matter structure
+type frontMatterData struct {
+	Display map[string]DisplayLocalization `yaml:"display"`
+}
+
 // extractFrontMatter extracts YAML front matter from markdown
-func extractFrontMatter(content []byte) map[string]string {
+func extractFrontMatter(content []byte) (map[string]string, map[string]DisplayLocalization) {
 	metadata := make(map[string]string)
+	displayLocs := make(map[string]DisplayLocalization)
 
 	// Check for YAML front matter (--- ... ---)
 	if !bytes.HasPrefix(content, []byte("---")) {
-		return metadata
+		return metadata, displayLocs
 	}
 
 	endIndex := bytes.Index(content[3:], []byte("---"))
 	if endIndex == -1 {
-		return metadata
+		return metadata, displayLocs
 	}
 
 	frontMatter := content[3 : endIndex+3]
-	lines := bytes.Split(frontMatter, []byte("\n"))
 
-	for _, line := range lines {
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
-			continue
-		}
+	// First, parse nested structures like display localizations
+	var fmData frontMatterData
+	if err := yaml.Unmarshal(frontMatter, &fmData); err == nil && fmData.Display != nil {
+		displayLocs = fmData.Display
+	}
 
-		parts := bytes.SplitN(line, []byte(":"), 2)
-		if len(parts) == 2 {
-			key := strings.TrimSpace(string(parts[0]))
-			value := strings.TrimSpace(string(parts[1]))
-			metadata[key] = value
+	// Parse as generic map to extract flat string values
+	var genericMap map[string]interface{}
+	if err := yaml.Unmarshal(frontMatter, &genericMap); err == nil {
+		for key, value := range genericMap {
+			// Only include string values (skip nested structures like display)
+			if strVal, ok := value.(string); ok {
+				metadata[key] = strVal
+			}
 		}
 	}
 
-	return metadata
+	return metadata, displayLocs
 }
 
 // parseClaimFromListItem parses a claim definition from a list item
@@ -510,6 +549,7 @@ func extractFrontMatter(content []byte) map[string]string {
 //   - en-US: "Display Name" - Description
 //   - de-DE: "Anzeigename" - Beschreibung
 var claimPattern = regexp.MustCompile("^`([^`]+)`\\s*(?:\"([^\"]+)\")?\\s*(?:\\(([^)]+)\\))?:?\\s*(.*)$")
+
 // localePattern requires a colon after the locale code and either a quoted label or a dash with description
 var localePattern = regexp.MustCompile("^([a-zA-Z]{2,3}(?:-[a-zA-Z]{2,4})?):\\s*(?:\"([^\"]+)\")?\\s*(?:-\\s*)?(.*)$")
 
@@ -531,22 +571,43 @@ func parseClaimFromListItem(text string) *ClaimDef {
 		claim.Type = "string"
 	}
 
-	// Check for mandatory flag
-	lowerDesc := strings.ToLower(claim.Description)
-	if strings.Contains(lowerDesc, "[mandatory]") || strings.Contains(lowerDesc, "(mandatory)") {
+	// Parse and strip all flags from description
+	// Flags can appear as [flag1, flag2, ...] or individually as [flag]
+	desc := claim.Description
+
+	// Pattern to match bracketed flag groups: [mandatory, svg_id=foo, sd=always]
+	bracketPattern := regexp.MustCompile(`\[([^\]]+)\]`)
+	bracketMatches := bracketPattern.FindAllStringSubmatch(desc, -1)
+
+	for _, match := range bracketMatches {
+		flagContent := match[1]
+		flags := strings.Split(flagContent, ",")
+
+		for _, flag := range flags {
+			flag = strings.TrimSpace(flag)
+			flagLower := strings.ToLower(flag)
+
+			if flagLower == "mandatory" {
+				claim.Mandatory = true
+			} else if strings.HasPrefix(flagLower, "sd=") {
+				claim.SD = strings.TrimPrefix(flagLower, "sd=")
+			} else if strings.HasPrefix(flagLower, "svg_id=") {
+				claim.SvgId = strings.TrimPrefix(flag, "svg_id=")
+			}
+		}
+	}
+
+	// Remove all bracketed flag groups from description
+	desc = bracketPattern.ReplaceAllString(desc, "")
+
+	// Also handle parenthetical flags like (mandatory)
+	parenPattern := regexp.MustCompile(`\(mandatory\)`)
+	if parenPattern.MatchString(strings.ToLower(desc)) {
 		claim.Mandatory = true
-		claim.Description = strings.ReplaceAll(claim.Description, "[mandatory]", "")
-		claim.Description = strings.ReplaceAll(claim.Description, "(mandatory)", "")
+		desc = regexp.MustCompile(`(?i)\(mandatory\)`).ReplaceAllString(desc, "")
 	}
 
-	// Check for SD flag
-	sdPattern := regexp.MustCompile(`\[?sd=(\w+)\]?`)
-	if sdMatches := sdPattern.FindStringSubmatch(lowerDesc); sdMatches != nil {
-		claim.SD = sdMatches[1]
-		claim.Description = sdPattern.ReplaceAllString(claim.Description, "")
-	}
-
-	claim.Description = strings.TrimSpace(claim.Description)
+	claim.Description = strings.TrimSpace(desc)
 
 	return claim
 }

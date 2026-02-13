@@ -86,8 +86,9 @@ This is a test credential.
 		t.Errorf("VCT metadata = %q", parsed.Metadata["vct"])
 	}
 
-	if parsed.Metadata["background_color"] != "\"#ffffff\"" {
-		t.Errorf("background_color = %q", parsed.Metadata["background_color"])
+	// YAML properly strips quotes from string values
+	if parsed.Metadata["background_color"] != "#ffffff" {
+		t.Errorf("background_color = %q, want #ffffff", parsed.Metadata["background_color"])
 	}
 }
 
@@ -152,6 +153,71 @@ func TestParser_ToVCTM(t *testing.T) {
 	}
 }
 
+func TestParser_ToVCTM_WithCredentialLocalizations(t *testing.T) {
+	cfg := &config.Config{
+		Language:  "en-US",
+		BaseURL:   "https://registry.example.com",
+		InputFile: "/test/identity.md",
+	}
+	p := NewParser(cfg)
+
+	parsed := &ParsedMarkdown{
+		Title:       "Student ID",
+		Description: "A digital student ID credential",
+		Sections:    map[string]string{},
+		Images:      []ImageRef{},
+		Claims:      map[string]ClaimDef{},
+		Metadata:    map[string]string{},
+		DisplayLocalizations: map[string]DisplayLocalization{
+			"de-DE": {Name: "Studentenausweis", Description: "Ein digitaler Studentenausweis"},
+			"fr-FR": {Name: "Carte étudiant", Description: "Une carte étudiant numérique"},
+		},
+	}
+
+	vctmDoc, err := p.ToVCTM(parsed)
+	if err != nil {
+		t.Fatalf("ToVCTM() error = %v", err)
+	}
+
+	// Should have 3 display entries: en-US (default), de-DE, fr-FR
+	if len(vctmDoc.Display) != 3 {
+		t.Errorf("Expected 3 display entries, got %d", len(vctmDoc.Display))
+	}
+
+	// Check that we have all expected locales
+	locales := make(map[string]bool)
+	for _, d := range vctmDoc.Display {
+		locales[d.Locale] = true
+		switch d.Locale {
+		case "en-US":
+			if d.Name != "Student ID" {
+				t.Errorf("en-US Name = %q, want 'Student ID'", d.Name)
+			}
+		case "de-DE":
+			if d.Name != "Studentenausweis" {
+				t.Errorf("de-DE Name = %q, want 'Studentenausweis'", d.Name)
+			}
+			if d.Description != "Ein digitaler Studentenausweis" {
+				t.Errorf("de-DE Description = %q", d.Description)
+			}
+		case "fr-FR":
+			if d.Name != "Carte étudiant" {
+				t.Errorf("fr-FR Name = %q, want 'Carte étudiant'", d.Name)
+			}
+		}
+	}
+
+	if !locales["en-US"] {
+		t.Error("Missing en-US locale")
+	}
+	if !locales["de-DE"] {
+		t.Error("Missing de-DE locale")
+	}
+	if !locales["fr-FR"] {
+		t.Error("Missing fr-FR locale")
+	}
+}
+
 func TestParseClaimFromListItem(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -160,6 +226,7 @@ func TestParseClaimFromListItem(t *testing.T) {
 		wantType    string
 		wantMand    bool
 		wantSD      string
+		wantSvgId   string
 		wantDesc    string
 		wantDisplay string
 		wantMatch   bool
@@ -222,6 +289,28 @@ func TestParseClaimFromListItem(t *testing.T) {
 			wantMand:    true,
 			wantMatch:   true,
 		},
+		{
+			name:      "claim with combined flags",
+			input:     "`student_id` \"Student ID\" (string): Unique student ID [mandatory, svg_id=student_id]",
+			wantName:  "student_id",
+			wantType:  "string",
+			wantDesc:  "Unique student ID",
+			wantDisplay: "Student ID",
+			wantMand:  true,
+			wantSvgId: "student_id",
+			wantMatch: true,
+		},
+		{
+			name:      "claim with all flags",
+			input:     "`secret` (string): A secret value [mandatory, sd=always, svg_id=secret_field]",
+			wantName:  "secret",
+			wantType:  "string",
+			wantDesc:  "A secret value",
+			wantMand:  true,
+			wantSD:    "always",
+			wantSvgId: "secret_field",
+			wantMatch: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -251,6 +340,9 @@ func TestParseClaimFromListItem(t *testing.T) {
 			if claim.SD != tt.wantSD {
 				t.Errorf("SD = %q, want %q", claim.SD, tt.wantSD)
 			}
+			if claim.SvgId != tt.wantSvgId {
+				t.Errorf("SvgId = %q, want %q", claim.SvgId, tt.wantSvgId)
+			}
 			if claim.Description != tt.wantDesc {
 				t.Errorf("Description = %q, want %q", claim.Description, tt.wantDesc)
 			}
@@ -263,9 +355,10 @@ func TestParseClaimFromListItem(t *testing.T) {
 
 func TestExtractFrontMatter(t *testing.T) {
 	tests := []struct {
-		name    string
-		content string
-		want    map[string]string
+		name        string
+		content     string
+		want        map[string]string
+		wantDisplay map[string]DisplayLocalization
 	}{
 		{
 			name: "with front matter",
@@ -279,30 +372,66 @@ name: Test
 				"vct":  "https://example.com/test",
 				"name": "Test",
 			},
+			wantDisplay: map[string]DisplayLocalization{},
 		},
 		{
-			name:    "no front matter",
-			content: "# Just a heading",
-			want:    map[string]string{},
+			name:        "no front matter",
+			content:     "# Just a heading",
+			want:        map[string]string{},
+			wantDisplay: map[string]DisplayLocalization{},
 		},
 		{
 			name: "unclosed front matter",
 			content: `---
 vct: test
 # Content`,
-			want: map[string]string{},
+			want:        map[string]string{},
+			wantDisplay: map[string]DisplayLocalization{},
+		},
+		{
+			name: "with display localizations",
+			content: `---
+vct: https://example.com/test
+display:
+  de-DE:
+    name: "Studentenausweis"
+    description: "Ein digitaler Studentenausweis"
+  fr-FR:
+    name: "Carte étudiant"
+    description: "Une carte étudiant numérique"
+---
+
+# Content`,
+			want: map[string]string{
+				"vct": "https://example.com/test",
+			},
+			wantDisplay: map[string]DisplayLocalization{
+				"de-DE": {Name: "Studentenausweis", Description: "Ein digitaler Studentenausweis"},
+				"fr-FR": {Name: "Carte étudiant", Description: "Une carte étudiant numérique"},
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractFrontMatter([]byte(tt.content))
+			got, gotDisplay := extractFrontMatter([]byte(tt.content))
 			if len(got) != len(tt.want) {
 				t.Errorf("extractFrontMatter() returned %d items, want %d", len(got), len(tt.want))
 			}
 			for k, v := range tt.want {
 				if got[k] != v {
 					t.Errorf("extractFrontMatter()[%q] = %q, want %q", k, got[k], v)
+				}
+			}
+			if len(gotDisplay) != len(tt.wantDisplay) {
+				t.Errorf("extractFrontMatter() returned %d display items, want %d", len(gotDisplay), len(tt.wantDisplay))
+			}
+			for k, v := range tt.wantDisplay {
+				if gotDisplay[k].Name != v.Name {
+					t.Errorf("extractFrontMatter() display[%q].Name = %q, want %q", k, gotDisplay[k].Name, v.Name)
+				}
+				if gotDisplay[k].Description != v.Description {
+					t.Errorf("extractFrontMatter() display[%q].Description = %q, want %q", k, gotDisplay[k].Description, v.Description)
 				}
 			}
 		})
@@ -419,12 +548,12 @@ func TestParser_buildImageURL(t *testing.T) {
 
 func TestParseLocalizationFromListItem(t *testing.T) {
 	tests := []struct {
-		name        string
-		input       string
-		wantLocale  string
-		wantLabel   string
-		wantDesc    string
-		wantMatch   bool
+		name       string
+		input      string
+		wantLocale string
+		wantLabel  string
+		wantDesc   string
+		wantMatch  bool
 	}{
 		{
 			name:       "full localization",
