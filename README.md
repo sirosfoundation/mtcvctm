@@ -20,7 +20,7 @@
 
 ---
 
-A tool to generate VCTM (Verifiable Credential Type Metadata) files from markdown, as specified in [Section 6 of draft-ietf-oauth-sd-jwt-vc-11](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-11#section-6).
+A tool to generate VCTM (Verifiable Credential Type Metadata) files from markdown, as specified in [Section 6 of draft-ietf-oauth-sd-jwt-vc-12](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-12#section-6).
 
 ## Overview
 
