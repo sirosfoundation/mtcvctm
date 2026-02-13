@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,6 +115,20 @@ func runBatch(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to write %s: %w", outputPath, err)
 		}
 
+		// Copy images referenced in the markdown to output directory
+		for _, img := range parsed.Images {
+			if img.AbsolutePath != "" && img.Path != "" {
+				destPath := filepath.Join(batchOutputDir, img.Path)
+				if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+					return fmt.Errorf("failed to create image directory for %s: %w", img.Path, err)
+				}
+				if err := copyFile(img.AbsolutePath, destPath); err != nil {
+					return fmt.Errorf("failed to copy image %s: %w", img.Path, err)
+				}
+				fmt.Printf("     Copied image: %s\n", img.Path)
+			}
+		}
+
 		// Add to registry
 		entry := action.CredentialEntry{
 			VCT:          vctmDoc.VCT,
@@ -181,4 +196,22 @@ func findMarkdownFiles(dir string) ([]string, error) {
 	})
 
 	return files, err
+}
+
+// copyFile copies a file from src to dst
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	return err
 }
