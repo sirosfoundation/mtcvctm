@@ -48,7 +48,7 @@ func init() {
 	generateCmd.Flags().StringVar(&vct, "vct", "", "Verifiable Credential Type identifier")
 	generateCmd.Flags().StringVar(&language, "language", "en-US", "Default language for display properties")
 	generateCmd.Flags().StringVarP(&configFile, "config", "c", "", "Configuration file path")
-	generateCmd.Flags().BoolVar(&inlineImages, "inline-images", false, "Embed images as base64 data URLs")
+	generateCmd.Flags().BoolVar(&inlineImages, "inline-images", true, "Embed images as base64 data URLs (default: true)")
 }
 
 func runGenerate(cmd *cobra.Command, args []string) error {

@@ -34,7 +34,7 @@ inputs:
   inline-images:
     description: 'Embed images as base64 data URLs in VCTM files'
     required: false
-    default: 'false'
+    default: 'true'
 
 outputs:
   registry-path:

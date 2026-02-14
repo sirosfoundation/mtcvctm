@@ -47,7 +47,7 @@ func init() {
 	batchCmd.Flags().BoolVar(&batchGitHubMode, "github-action", false, "Run in GitHub Action mode")
 	batchCmd.Flags().StringVar(&batchVCTMBranch, "vctm-branch", "vctm", "Branch name for VCTM files in GitHub Action mode")
 	batchCmd.Flags().StringVar(&batchCommitMsg, "commit-message", "Update VCTM files", "Commit message for GitHub Action mode")
-	batchCmd.Flags().BoolVar(&batchInlineImages, "inline-images", false, "Embed images as base64 data URLs")
+	batchCmd.Flags().BoolVar(&batchInlineImages, "inline-images", true, "Embed images as base64 data URLs (default: true)")
 }
 
 func runBatch(cmd *cobra.Command, args []string) error {
