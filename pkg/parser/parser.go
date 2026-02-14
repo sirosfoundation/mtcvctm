@@ -371,6 +371,16 @@ func (p *Parser) imageToLogo(img ImageRef) *vctm.Logo {
 		AltText: img.AltText,
 	}
 
+	// If inline images is enabled, convert to data URL
+	if p.config.InlineImages {
+		if dataURL, err := p.imageToDataURL(img.AbsolutePath); err == nil {
+			logo.URI = dataURL
+			// No integrity needed for inline data URLs
+			return logo
+		}
+		// Fall through to URL-based approach on error
+	}
+
 	if p.config.BaseURL != "" {
 		logo.URI = p.buildImageURL(img.Path)
 		if integrity, err := p.calculateIntegrity(img.AbsolutePath); err == nil {
@@ -381,6 +391,39 @@ func (p *Parser) imageToLogo(img ImageRef) *vctm.Logo {
 	}
 
 	return logo
+}
+
+// imageToDataURL reads an image file and converts it to a base64 data URL
+func (p *Parser) imageToDataURL(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+
+	mimeType := getMimeType(path)
+	encoded := base64.StdEncoding.EncodeToString(data)
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, encoded), nil
+}
+
+// getMimeType returns the MIME type for an image file based on extension
+func getMimeType(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".svg":
+		return "image/svg+xml"
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".ico":
+		return "image/x-icon"
+	default:
+		return "application/octet-stream"
+	}
 }
 
 // buildImageURL builds a full URL for an image
@@ -451,9 +494,20 @@ func (p *Parser) buildRendering(parsed *ParsedMarkdown) *vctm.Rendering {
 	var svgTemplates []vctm.SVGTemplate
 	for _, img := range parsed.Images {
 		if strings.HasSuffix(strings.ToLower(img.Path), ".svg") {
-			tmpl := vctm.SVGTemplate{
-				URI: p.buildImageURL(img.Path),
+			var tmpl vctm.SVGTemplate
+
+			// If inline images is enabled, convert to data URL
+			if p.config.InlineImages {
+				if dataURL, err := p.imageToDataURL(img.AbsolutePath); err == nil {
+					tmpl.URI = dataURL
+					// No integrity needed for inline data URLs
+					svgTemplates = append(svgTemplates, tmpl)
+					continue
+				}
+				// Fall through to URL-based approach on error
 			}
+
+			tmpl.URI = p.buildImageURL(img.Path)
 			if integrity, err := p.calculateIntegrity(img.AbsolutePath); err == nil {
 				tmpl.URIIntegrity = integrity
 			}

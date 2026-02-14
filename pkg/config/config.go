@@ -32,6 +32,9 @@ type Config struct {
 
 	// VCTMBranch is the branch to commit VCTM files to in GitHub Action mode
 	VCTMBranch string `yaml:"vctm_branch" json:"vctm_branch"`
+
+	// InlineImages embeds images as base64 data URLs in the VCTM
+	InlineImages bool `yaml:"inline_images" json:"inline_images"`
 }
 
 // DefaultConfig returns a configuration with default values
@@ -139,5 +142,8 @@ func (c *Config) Merge(other *Config) {
 	}
 	if other.VCTMBranch != "" {
 		c.VCTMBranch = other.VCTMBranch
+	}
+	if other.InlineImages {
+		c.InlineImages = true
 	}
 }

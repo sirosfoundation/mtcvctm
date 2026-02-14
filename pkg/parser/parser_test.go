@@ -290,15 +290,15 @@ func TestParseClaimFromListItem(t *testing.T) {
 			wantMatch:   true,
 		},
 		{
-			name:      "claim with combined flags",
-			input:     "`student_id` \"Student ID\" (string): Unique student ID [mandatory, svg_id=student_id]",
-			wantName:  "student_id",
-			wantType:  "string",
-			wantDesc:  "Unique student ID",
+			name:        "claim with combined flags",
+			input:       "`student_id` \"Student ID\" (string): Unique student ID [mandatory, svg_id=student_id]",
+			wantName:    "student_id",
+			wantType:    "string",
+			wantDesc:    "Unique student ID",
 			wantDisplay: "Student ID",
-			wantMand:  true,
-			wantSvgId: "student_id",
-			wantMatch: true,
+			wantMand:    true,
+			wantSvgId:   "student_id",
+			wantMatch:   true,
 		},
 		{
 			name:      "claim with all flags",
@@ -541,6 +541,130 @@ func TestParser_buildImageURL(t *testing.T) {
 			got := p.buildImageURL(tt.path)
 			if got != tt.want {
 				t.Errorf("buildImageURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParser_imageToDataURL(t *testing.T) {
+	// Create a temp file with known content
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name     string
+		filename string
+		content  []byte
+		wantMime string
+	}{
+		{
+			name:     "PNG image",
+			filename: "test.png",
+			content:  []byte{0x89, 0x50, 0x4E, 0x47}, // PNG magic bytes
+			wantMime: "image/png",
+		},
+		{
+			name:     "SVG image",
+			filename: "test.svg",
+			content:  []byte("<svg></svg>"),
+			wantMime: "image/svg+xml",
+		},
+		{
+			name:     "JPEG image",
+			filename: "test.jpg",
+			content:  []byte{0xFF, 0xD8, 0xFF}, // JPEG magic bytes
+			wantMime: "image/jpeg",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filePath := filepath.Join(tmpDir, tt.filename)
+			if err := os.WriteFile(filePath, tt.content, 0644); err != nil {
+				t.Fatalf("Failed to create test file: %v", err)
+			}
+
+			cfg := &config.Config{
+				InlineImages: true,
+			}
+			p := NewParser(cfg)
+			dataURL, err := p.imageToDataURL(filePath)
+			if err != nil {
+				t.Fatalf("imageToDataURL() error = %v", err)
+			}
+
+			// Check that it starts with the correct data URL prefix
+			expectedPrefix := "data:" + tt.wantMime + ";base64,"
+			if !hasPrefix(dataURL, expectedPrefix) {
+				t.Errorf("imageToDataURL() = %q, want prefix %q", dataURL[:min(len(dataURL), 50)], expectedPrefix)
+			}
+		})
+	}
+}
+
+func hasPrefix(s, prefix string) bool {
+	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+
+func TestParser_imageToLogo_Inline(t *testing.T) {
+	// Create a temp file with known content
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "logo.png")
+	if err := os.WriteFile(imgPath, []byte{0x89, 0x50, 0x4E, 0x47}, 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	cfg := &config.Config{
+		InlineImages: true,
+		BaseURL:      "https://example.com",
+	}
+	p := NewParser(cfg)
+
+	img := ImageRef{
+		Path:         "logo.png",
+		AbsolutePath: imgPath,
+		AltText:      "Test Logo",
+	}
+
+	logo := p.imageToLogo(img)
+
+	// With InlineImages=true, URI should be a data URL
+	if !hasPrefix(logo.URI, "data:image/png;base64,") {
+		t.Errorf("imageToLogo() URI = %q, want data URL", logo.URI[:min(len(logo.URI), 50)])
+	}
+
+	// URIIntegrity should be empty for inline images
+	if logo.URIIntegrity != "" {
+		t.Errorf("imageToLogo() URIIntegrity = %q, want empty for inline images", logo.URIIntegrity)
+	}
+
+	// AltText should be preserved
+	if logo.AltText != "Test Logo" {
+		t.Errorf("imageToLogo() AltText = %q, want %q", logo.AltText, "Test Logo")
+	}
+}
+
+func TestGetMimeType(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"/path/to/image.png", "image/png"},
+		{"/path/to/image.PNG", "image/png"},
+		{"/path/to/image.svg", "image/svg+xml"},
+		{"/path/to/image.SVG", "image/svg+xml"},
+		{"/path/to/image.jpg", "image/jpeg"},
+		{"/path/to/image.jpeg", "image/jpeg"},
+		{"/path/to/image.gif", "image/gif"},
+		{"/path/to/image.webp", "image/webp"},
+		{"/path/to/image.ico", "image/x-icon"},
+		{"/path/to/unknown.xyz", "application/octet-stream"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			got := getMimeType(tt.path)
+			if got != tt.want {
+				t.Errorf("getMimeType(%q) = %q, want %q", tt.path, got, tt.want)
 			}
 		})
 	}

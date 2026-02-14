@@ -14,12 +14,13 @@ import (
 )
 
 var (
-	batchInputDir   string
-	batchOutputDir  string
-	batchBaseURL    string
-	batchGitHubMode bool
-	batchVCTMBranch string
-	batchCommitMsg  string
+	batchInputDir     string
+	batchOutputDir    string
+	batchBaseURL      string
+	batchGitHubMode   bool
+	batchVCTMBranch   string
+	batchCommitMsg    string
+	batchInlineImages bool
 )
 
 var batchCmd = &cobra.Command{
@@ -46,6 +47,7 @@ func init() {
 	batchCmd.Flags().BoolVar(&batchGitHubMode, "github-action", false, "Run in GitHub Action mode")
 	batchCmd.Flags().StringVar(&batchVCTMBranch, "vctm-branch", "vctm", "Branch name for VCTM files in GitHub Action mode")
 	batchCmd.Flags().StringVar(&batchCommitMsg, "commit-message", "Update VCTM files", "Commit message for GitHub Action mode")
+	batchCmd.Flags().BoolVar(&batchInlineImages, "inline-images", false, "Embed images as base64 data URLs")
 }
 
 func runBatch(cmd *cobra.Command, args []string) error {
@@ -73,9 +75,10 @@ func runBatch(cmd *cobra.Command, args []string) error {
 
 		// Create config for this file
 		cfg := &config.Config{
-			InputFile: mdFile,
-			BaseURL:   batchBaseURL,
-			Language:  "en-US",
+			InputFile:    mdFile,
+			BaseURL:      batchBaseURL,
+			Language:     "en-US",
+			InlineImages: batchInlineImages,
 		}
 
 		// Determine output path

@@ -146,6 +146,8 @@ Images referenced in the markdown become:
 
 When `--base-url` is specified, URLs and SRI integrity hashes are generated for all images.
 
+When `--inline-images` is specified, images are embedded as base64 data URLs in the VCTM, making the output self-contained without external dependencies.
+
 ## Configuration
 
 Configuration can be provided via:
@@ -160,6 +162,7 @@ output: credential.vctm
 base_url: https://registry.example.com
 language: en-US
 vctm_branch: vctm
+inline_images: false  # Set to true to embed images as data URLs
 ```
 
 ## GitHub Action
@@ -197,6 +200,7 @@ jobs:
 | `base-url` | Base URL for generating image URLs | `` |
 | `vctm-branch` | Branch name for VCTM files | `vctm` |
 | `commit-message` | Commit message for updates | `Update VCTM files [skip ci]` |
+| `inline-images` | Embed images as base64 data URLs | `false` |
 
 ### Action Outputs
 
