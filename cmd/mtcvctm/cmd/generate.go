@@ -10,12 +10,12 @@ import (
 )
 
 var (
-	outputFile   string
-	baseURL      string
-	vct          string
-	language     string
-	configFile   string
-	inlineImages bool
+	outputFile     string
+	baseURL        string
+	vct            string
+	language       string
+	configFile     string
+	noInlineImages bool
 )
 
 var generateCmd = &cobra.Command{
@@ -48,7 +48,7 @@ func init() {
 	generateCmd.Flags().StringVar(&vct, "vct", "", "Verifiable Credential Type identifier")
 	generateCmd.Flags().StringVar(&language, "language", "en-US", "Default language for display properties")
 	generateCmd.Flags().StringVarP(&configFile, "config", "c", "", "Configuration file path")
-	generateCmd.Flags().BoolVar(&inlineImages, "inline-images", true, "Embed images as base64 data URLs (default: true)")
+	generateCmd.Flags().BoolVar(&noInlineImages, "no-inline-images", false, "Use URLs instead of embedding images as data URLs")
 }
 
 func runGenerate(cmd *cobra.Command, args []string) error {
@@ -73,7 +73,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		BaseURL:      baseURL,
 		VCT:          vct,
 		Language:     language,
-		InlineImages: inlineImages,
+		InlineImages: !noInlineImages,
 	}
 	cfg.Merge(flagCfg)
 

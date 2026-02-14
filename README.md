@@ -144,9 +144,7 @@ Images referenced in the markdown become:
 - The first image becomes the credential logo
 - SVG files become SVG templates for rendering
 
-When `--base-url` is specified and `--inline-images=false`, URLs and SRI integrity hashes are generated for all images.
-
-By default, images are embedded as base64 data URLs in the VCTM, making the output self-contained without external dependencies. Use `--inline-images=false` to generate URLs instead.
+By default, images are embedded as base64 data URLs in the VCTM, making the output self-contained without external dependencies. Use `--no-inline-images` to generate URLs instead (requires `--base-url`).
 
 ## Configuration
 
@@ -200,7 +198,7 @@ jobs:
 | `base-url` | Base URL for generating image URLs | `` |
 | `vctm-branch` | Branch name for VCTM files | `vctm` |
 | `commit-message` | Commit message for updates | `Update VCTM files [skip ci]` |
-| `inline-images` | Embed images as base64 data URLs | `true` |
+| `no-inline-images` | Use URLs instead of embedding images | `false` |
 
 ### Action Outputs
 

@@ -31,10 +31,10 @@ inputs:
     description: 'GitHub token for pushing to vctm branch'
     required: false
     default: ${{ github.token }}
-  inline-images:
-    description: 'Embed images as base64 data URLs in VCTM files'
+  no-inline-images:
+    description: 'Use URLs instead of embedding images as data URLs'
     required: false
-    default: 'true'
+    default: 'false'
 
 outputs:
   registry-path:
@@ -62,9 +62,9 @@ runs:
       id: generate
       shell: bash
       run: |
-        INLINE_FLAG=""
-        if [ "${{ inputs.inline-images }}" = "true" ]; then
-          INLINE_FLAG="--inline-images"
+        NO_INLINE_FLAG=""
+        if [ "${{ inputs.no-inline-images }}" = "true" ]; then
+          NO_INLINE_FLAG="--no-inline-images"
         fi
         
         ${{ github.action_path }}/mtcvctm batch \
@@ -73,7 +73,7 @@ runs:
           --base-url "${{ inputs.base-url }}" \
           --vctm-branch "${{ inputs.vctm-branch }}" \
           --commit-message "${{ inputs.commit-message }}" \
-          $INLINE_FLAG
+          $NO_INLINE_FLAG
         
         echo "registry-path=${{ inputs.output-dir }}/.well-known/vctm-registry.json" >> $GITHUB_OUTPUT
 
