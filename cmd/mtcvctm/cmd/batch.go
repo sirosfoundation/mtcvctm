@@ -9,6 +9,10 @@ import (
 
 	"github.com/sirosfoundation/mtcvctm/internal/action"
 	"github.com/sirosfoundation/mtcvctm/pkg/config"
+	"github.com/sirosfoundation/mtcvctm/pkg/formats"
+	_ "github.com/sirosfoundation/mtcvctm/pkg/formats/mddl"
+	_ "github.com/sirosfoundation/mtcvctm/pkg/formats/vctmfmt"
+	_ "github.com/sirosfoundation/mtcvctm/pkg/formats/w3c"
 	"github.com/sirosfoundation/mtcvctm/pkg/parser"
 	"github.com/spf13/cobra"
 )
@@ -21,19 +25,27 @@ var (
 	batchVCTMBranch     string
 	batchCommitMsg      string
 	batchNoInlineImages bool
+	batchFormatFlag     string
 )
 
 var batchCmd = &cobra.Command{
 	Use:   "batch",
 	Short: "Process multiple markdown files and generate a registry",
-	Long: `Process all markdown files in a directory and generate VCTM files 
+	Long: `Process all markdown files in a directory and generate credential metadata files 
 along with a .well-known/vctm-registry.json metadata file.
 
+Supports multiple output formats:
+  - vctm: SD-JWT VC Type Metadata (default)
+  - mddl: mso_mdoc credential configuration (ISO 18013-5)
+  - w3c:  W3C Verifiable Credential schema
+  - all:  Generate all formats
+
 This command is designed for use in GitHub Actions to automatically
-update VCTM files when markdown sources change.
+update credential metadata files when markdown sources change.
 
 Example:
   mtcvctm batch --input ./credentials --output ./vctm --base-url https://registry.example.com
+  mtcvctm batch --format all --input ./credentials --output ./dist
   mtcvctm batch --github-action --vctm-branch vctm`,
 	RunE: runBatch,
 }
@@ -42,15 +54,22 @@ func init() {
 	rootCmd.AddCommand(batchCmd)
 
 	batchCmd.Flags().StringVarP(&batchInputDir, "input", "i", ".", "Input directory containing markdown files")
-	batchCmd.Flags().StringVarP(&batchOutputDir, "output", "o", ".", "Output directory for VCTM files")
+	batchCmd.Flags().StringVarP(&batchOutputDir, "output", "o", ".", "Output directory for credential files")
 	batchCmd.Flags().StringVar(&batchBaseURL, "base-url", "", "Base URL for generating image URLs")
 	batchCmd.Flags().BoolVar(&batchGitHubMode, "github-action", false, "Run in GitHub Action mode")
 	batchCmd.Flags().StringVar(&batchVCTMBranch, "vctm-branch", "vctm", "Branch name for VCTM files in GitHub Action mode")
 	batchCmd.Flags().StringVar(&batchCommitMsg, "commit-message", "Update VCTM files", "Commit message for GitHub Action mode")
 	batchCmd.Flags().BoolVar(&batchNoInlineImages, "no-inline-images", false, "Use URLs instead of embedding images as data URLs")
+	batchCmd.Flags().StringVarP(&batchFormatFlag, "format", "f", "vctm", "Output format(s): vctm, mddl, w3c, all (comma-separated)")
 }
 
 func runBatch(cmd *cobra.Command, args []string) error {
+	// Parse formats
+	formatNames, err := formats.ParseFormats(batchFormatFlag)
+	if err != nil {
+		return err
+	}
+
 	// Find all markdown files
 	mdFiles, err := findMarkdownFiles(batchInputDir)
 	if err != nil {
@@ -79,46 +98,48 @@ func runBatch(cmd *cobra.Command, args []string) error {
 			BaseURL:      batchBaseURL,
 			Language:     "en-US",
 			InlineImages: !batchNoInlineImages,
+			Formats:      batchFormatFlag,
 		}
 
-		// Determine output path
+		// Determine relative path for output
 		relPath, _ := filepath.Rel(batchInputDir, mdFile)
 		baseName := strings.TrimSuffix(relPath, filepath.Ext(relPath))
-		outputPath := filepath.Join(batchOutputDir, baseName+".vctm")
 
-		// Ensure output subdirectory exists
-		if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
-			return fmt.Errorf("failed to create output directory for %s: %w", mdFile, err)
-		}
-
-		cfg.OutputFile = outputPath
-
-		// Parse and convert
+		// Parse markdown
 		p := parser.NewParser(cfg)
-		parsed, err := p.Parse(mdFile)
+		cred, err := p.ParseToCredential(mdFile)
 		if err != nil {
 			return fmt.Errorf("failed to parse %s: %w", mdFile, err)
 		}
 
-		vctmDoc, err := p.ToVCTM(parsed)
+		// Generate all requested formats
+		outputs, err := p.Generate(cred, formatNames)
 		if err != nil {
-			return fmt.Errorf("failed to generate VCTM for %s: %w", mdFile, err)
+			return fmt.Errorf("failed to generate output for %s: %w", mdFile, err)
 		}
 
-		if err := vctmDoc.Validate(); err != nil {
-			return fmt.Errorf("invalid VCTM for %s: %w", mdFile, err)
-		}
+		// Track generated files for this credential
+		var generatedFiles []string
 
-		jsonData, err := vctmDoc.ToJSON()
-		if err != nil {
-			return fmt.Errorf("failed to serialize VCTM for %s: %w", mdFile, err)
-		}
+		// Write each format output
+		for formatName, data := range outputs {
+			outputPath := filepath.Join(batchOutputDir, parser.OutputFileName(baseName, formatName))
 
-		if err := os.WriteFile(outputPath, jsonData, 0644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", outputPath, err)
+			// Ensure output subdirectory exists
+			if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+				return fmt.Errorf("failed to create output directory for %s: %w", mdFile, err)
+			}
+
+			if err := os.WriteFile(outputPath, data, 0644); err != nil {
+				return fmt.Errorf("failed to write %s: %w", outputPath, err)
+			}
+
+			generatedFiles = append(generatedFiles, filepath.Base(outputPath))
+			fmt.Printf("  -> Generated %s: %s\n", formatName, outputPath)
 		}
 
 		// Copy images referenced in the markdown to output directory
+		parsed, _ := p.Parse(mdFile) // Re-parse to get images (cred doesn't have AbsolutePath)
 		for _, img := range parsed.Images {
 			if img.AbsolutePath != "" && img.Path != "" {
 				destPath := filepath.Join(batchOutputDir, img.Path)
@@ -132,12 +153,19 @@ func runBatch(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		// Get VCT identifier (for backward compatibility with registry)
+		vctmGen, _ := formats.Get("vctm")
+		vctID := ""
+		if vctmGen != nil {
+			vctID = vctmGen.DeriveIdentifier(cred, cfg)
+		}
+
 		// Add to registry
 		entry := action.CredentialEntry{
-			VCT:          vctmDoc.VCT,
-			Name:         vctmDoc.Name,
+			VCT:          vctID,
+			Name:         cred.Name,
 			SourceFile:   relPath,
-			VCTMFile:     baseName + ".vctm",
+			VCTMFile:     baseName + ".vctm", // Primary VCTM file for backward compat
 			LastModified: action.GetFileLastModified(mdFile),
 		}
 
@@ -145,7 +173,6 @@ func runBatch(cmd *cobra.Command, args []string) error {
 		entry.CommitHistory = action.GetFileCommitHistory(mdFile, 5)
 
 		credentials = append(credentials, entry)
-		fmt.Printf("  -> Generated: %s\n", outputPath)
 	}
 
 	// Generate registry
@@ -191,7 +218,12 @@ func findMarkdownFiles(dir string) ([]string, error) {
 
 		// Check for markdown files
 		ext := strings.ToLower(filepath.Ext(path))
+		name := filepath.Base(path)
 		if ext == ".md" || ext == ".markdown" {
+			// Skip files starting with underscore (templates, examples)
+			if strings.HasPrefix(name, "_") {
+				return nil
+			}
 			files = append(files, path)
 		}
 

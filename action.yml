@@ -1,5 +1,5 @@
-name: 'MTCVCTM - Generate VCTM'
-description: 'Generate Verifiable Credential Type Metadata from Markdown files'
+name: 'MTCVCTM - Generate Credential Metadata'
+description: 'Generate Verifiable Credential Type Metadata from Markdown files in multiple formats'
 author: 'sirosfoundation'
 
 branding:
@@ -12,7 +12,7 @@ inputs:
     required: false
     default: '.'
   output-dir:
-    description: 'Output directory for VCTM files'
+    description: 'Output directory for credential metadata files'
     required: false
     default: '.'
   base-url:
@@ -35,6 +35,10 @@ inputs:
     description: 'Use URLs instead of embedding images as data URLs'
     required: false
     default: 'false'
+  formats:
+    description: 'Output formats (comma-separated): vctm, mddl, w3c, all'
+    required: false
+    default: 'vctm'
 
 outputs:
   registry-path:
@@ -58,7 +62,7 @@ runs:
         cd ${{ github.action_path }}
         go build -o mtcvctm ./cmd/mtcvctm
 
-    - name: Generate VCTM files
+    - name: Generate credential metadata files
       id: generate
       shell: bash
       run: |
@@ -73,6 +77,7 @@ runs:
           --base-url "${{ inputs.base-url }}" \
           --vctm-branch "${{ inputs.vctm-branch }}" \
           --commit-message "${{ inputs.commit-message }}" \
+          --format "${{ inputs.formats }}" \
           $NO_INLINE_FLAG
         
         echo "registry-path=${{ inputs.output-dir }}/.well-known/vctm-registry.json" >> $GITHUB_OUTPUT

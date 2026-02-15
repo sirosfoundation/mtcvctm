@@ -18,6 +18,9 @@ type Config struct {
 	// OutputFile is the path to the output VCTM file
 	OutputFile string `yaml:"output" json:"output"`
 
+	// OutputDir is the directory for output files (used in multi-format mode)
+	OutputDir string `yaml:"output_dir" json:"output_dir"`
+
 	// BaseURL is the base URL for generating image URLs
 	BaseURL string `yaml:"base_url" json:"base_url"`
 
@@ -35,6 +38,9 @@ type Config struct {
 
 	// InlineImages embeds images as base64 data URLs in the VCTM
 	InlineImages bool `yaml:"inline_images" json:"inline_images"`
+
+	// Formats is a comma-separated list of output formats (vctm, mddl, w3c, all)
+	Formats string `yaml:"formats" json:"formats"`
 }
 
 // DefaultConfig returns a configuration with default values
@@ -42,6 +48,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Language:   "en-US",
 		VCTMBranch: "vctm",
+		Formats:    "vctm", // Default to VCTM only for backward compatibility
 	}
 }
 
@@ -128,6 +135,9 @@ func (c *Config) Merge(other *Config) {
 	if other.OutputFile != "" {
 		c.OutputFile = other.OutputFile
 	}
+	if other.OutputDir != "" {
+		c.OutputDir = other.OutputDir
+	}
 	if other.BaseURL != "" {
 		c.BaseURL = other.BaseURL
 	}
@@ -145,5 +155,8 @@ func (c *Config) Merge(other *Config) {
 	}
 	if other.InlineImages {
 		c.InlineImages = true
+	}
+	if other.Formats != "" {
+		c.Formats = other.Formats
 	}
 }
