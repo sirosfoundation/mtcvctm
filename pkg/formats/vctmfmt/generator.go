@@ -99,31 +99,72 @@ func (g *Generator) Generate(parsed *formats.ParsedCredential, cfg *config.Confi
 		output["claims"] = claims
 	}
 
-	// Build display
+	// Build display with rendering section
 	display := make(map[string]interface{})
+	rendering := make(map[string]interface{})
 
-	// Rendering if SVG template provided
+	// Collect SVG templates from images and explicit configuration
+	svgTemplates := make([]map[string]interface{}, 0)
+
+	// First, add explicit SVG template from metadata
 	if parsed.SVGTemplatePath != "" || parsed.SVGTemplateURI != "" {
-		rendering, err := g.buildRendering(parsed)
-		if err == nil && rendering != nil {
-			display["rendering"] = rendering
+		template, err := g.buildSVGTemplate(parsed.SVGTemplateURI, parsed.SVGTemplatePath, parsed.SVGTemplateIntegrity, parsed.SourceDir, parsed.InlineImages, cfg)
+		if err == nil && template != nil {
+			svgTemplates = append(svgTemplates, template)
 		}
 	}
 
-	// Logo handling
+	// Process images from markdown
+	var logoImage *formats.ImageRef
+	for i := range parsed.Images {
+		img := &parsed.Images[i]
+		if strings.HasSuffix(strings.ToLower(img.Path), ".svg") {
+			// SVG files become svg_templates
+			template, err := g.buildSVGTemplateFromImage(img, parsed.SourceDir, parsed.InlineImages, cfg)
+			if err == nil && template != nil {
+				svgTemplates = append(svgTemplates, template)
+			}
+		} else if logoImage == nil {
+			// First non-SVG image becomes the logo
+			logoImage = img
+		}
+	}
+
+	// Add svg_templates if any
+	if len(svgTemplates) > 0 {
+		rendering["svg_templates"] = svgTemplates
+	}
+
+	// Handle simple rendering properties
+	simple := make(map[string]interface{})
+
+	// Logo handling - prefer explicit logo, then first non-SVG image
 	if parsed.LogoPath != "" {
-		logo, err := g.imageToLogo(parsed.LogoPath, parsed.LogoAltText, parsed.SourceDir, parsed.InlineImages)
+		logo, err := g.imageToLogo(parsed.LogoPath, parsed.LogoAltText, parsed.SourceDir, parsed.InlineImages, cfg)
 		if err == nil && logo != nil {
-			display["logo"] = logo
+			simple["logo"] = logo
+		}
+	} else if logoImage != nil {
+		logo, err := g.imageToLogo(logoImage.Path, logoImage.AltText, parsed.SourceDir, parsed.InlineImages, cfg)
+		if err == nil && logo != nil {
+			simple["logo"] = logo
 		}
 	}
 
 	// Background/text colors
 	if parsed.BackgroundColor != "" {
-		display["background_color"] = parsed.BackgroundColor
+		simple["background_color"] = parsed.BackgroundColor
 	}
 	if parsed.TextColor != "" {
-		display["text_color"] = parsed.TextColor
+		simple["text_color"] = parsed.TextColor
+	}
+
+	if len(simple) > 0 {
+		rendering["simple"] = simple
+	}
+
+	if len(rendering) > 0 {
+		display["rendering"] = rendering
 	}
 
 	if len(display) > 0 {
@@ -133,60 +174,81 @@ func (g *Generator) Generate(parsed *formats.ParsedCredential, cfg *config.Confi
 	return formats.FormatJSON(output)
 }
 
-// buildRendering creates the rendering object for SVG templates
-func (g *Generator) buildRendering(parsed *formats.ParsedCredential) ([]map[string]interface{}, error) {
-	rendering := make([]map[string]interface{}, 0)
+// buildSVGTemplate creates an SVG template entry from explicit configuration
+func (g *Generator) buildSVGTemplate(uri, path, integrity, sourceDir string, inline bool, cfg *config.Config) (map[string]interface{}, error) {
+	template := make(map[string]interface{})
 
-	simple := make(map[string]interface{})
-	simple["method"] = "svg_templates"
-	templates := make([]map[string]interface{}, 0)
+	if uri != "" {
+		template["uri"] = uri
+	} else if path != "" {
+		// Build URL or inline
+		svgPath := path
+		if !filepath.IsAbs(svgPath) {
+			svgPath = filepath.Join(sourceDir, svgPath)
+		}
 
-	if parsed.SVGTemplatePath != "" || parsed.SVGTemplateURI != "" {
-		template := make(map[string]interface{})
-
-		if parsed.SVGTemplateURI != "" {
-			template["uri"] = parsed.SVGTemplateURI
-		} else if parsed.SVGTemplatePath != "" && parsed.InlineImages {
-			// Inline SVG as data URI
-			svgPath := parsed.SVGTemplatePath
-			if !filepath.IsAbs(svgPath) {
-				svgPath = filepath.Join(parsed.SourceDir, svgPath)
-			}
+		if inline {
 			data, err := os.ReadFile(svgPath)
-			if err == nil {
-				template["uri"] = "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString(data)
-			} else {
+			if err != nil {
 				return nil, err
 			}
+			template["uri"] = "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString(data)
+		} else if cfg.BaseURL != "" {
+			template["uri"] = cfg.BaseURL + "/" + path
 		}
-
-		// Add integrity hash if provided
-		if parsed.SVGTemplateIntegrity != "" {
-			template["uri#integrity"] = parsed.SVGTemplateIntegrity
-		}
-
-		templates = append(templates, template)
 	}
 
-	if len(templates) > 0 {
-		simple["templates"] = templates
-		rendering = append(rendering, simple)
+	if integrity != "" {
+		template["uri#integrity"] = integrity
 	}
 
-	return rendering, nil
+	if len(template) == 0 {
+		return nil, nil
+	}
+
+	return template, nil
+}
+
+// buildSVGTemplateFromImage creates an SVG template entry from an image reference
+func (g *Generator) buildSVGTemplateFromImage(img *formats.ImageRef, sourceDir string, inline bool, cfg *config.Config) (map[string]interface{}, error) {
+	template := make(map[string]interface{})
+
+	imagePath := img.Path
+	if img.AbsolutePath != "" {
+		imagePath = img.AbsolutePath
+	} else if !filepath.IsAbs(imagePath) {
+		imagePath = filepath.Join(sourceDir, imagePath)
+	}
+
+	if inline {
+		data, err := os.ReadFile(imagePath)
+		if err != nil {
+			return nil, err
+		}
+		template["uri"] = "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString(data)
+	} else if cfg.BaseURL != "" {
+		template["uri"] = cfg.BaseURL + "/" + img.Path
+	}
+
+	if len(template) == 0 {
+		return nil, nil
+	}
+
+	return template, nil
 }
 
 // imageToLogo converts an image path to a logo object
-func (g *Generator) imageToLogo(path, altText, sourceDir string, inline bool) (map[string]interface{}, error) {
+func (g *Generator) imageToLogo(path, altText, sourceDir string, inline bool, cfg *config.Config) (map[string]interface{}, error) {
 	logo := make(map[string]interface{})
 
 	if path != "" {
+		imagePath := path
+		if !filepath.IsAbs(imagePath) {
+			imagePath = filepath.Join(sourceDir, imagePath)
+		}
+
 		if inline {
 			// Read and inline the image
-			imagePath := path
-			if !filepath.IsAbs(imagePath) {
-				imagePath = filepath.Join(sourceDir, imagePath)
-			}
 			data, err := os.ReadFile(imagePath)
 			if err != nil {
 				return nil, err
@@ -197,6 +259,8 @@ func (g *Generator) imageToLogo(path, altText, sourceDir string, inline bool) (m
 				mimeType = "image/svg+xml"
 			}
 			logo["uri"] = fmt.Sprintf("data:%s;base64,%s", mimeType, base64.StdEncoding.EncodeToString(data))
+		} else if cfg.BaseURL != "" {
+			logo["uri"] = cfg.BaseURL + "/" + path
 		}
 	}
 
