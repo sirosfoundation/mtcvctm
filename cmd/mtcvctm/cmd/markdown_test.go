@@ -391,3 +391,118 @@ func TestVCTMJSONRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestDecodeDataURL tests decoding of data URLs
+func TestDecodeDataURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		dataURL string
+		wantExt string
+		wantErr bool
+	}{
+		{
+			name:    "PNG base64",
+			dataURL: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+			wantExt: ".png",
+			wantErr: false,
+		},
+		{
+			name:    "SVG base64",
+			dataURL: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjwvc3ZnPg==",
+			wantExt: ".svg",
+			wantErr: false,
+		},
+		{
+			name:    "Invalid - no comma",
+			dataURL: "data:image/png;base64",
+			wantErr: true,
+		},
+		{
+			name:    "Invalid - not data URL",
+			dataURL: "https://example.com/image.png",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, ext, err := decodeDataURL(tt.dataURL)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("decodeDataURL() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr {
+				return
+			}
+			if ext != tt.wantExt {
+				t.Errorf("decodeDataURL() ext = %q, want %q", ext, tt.wantExt)
+			}
+			if len(data) == 0 {
+				t.Error("decodeDataURL() returned empty data")
+			}
+		})
+	}
+}
+
+// TestMimeTypeToExt tests mime type to extension conversion
+func TestMimeTypeToExt(t *testing.T) {
+	tests := []struct {
+		mimeType string
+		wantExt  string
+	}{
+		{"image/png", ".png"},
+		{"image/jpeg", ".jpg"},
+		{"image/jpg", ".jpg"},
+		{"image/gif", ".gif"},
+		{"image/svg+xml", ".svg"},
+		{"image/webp", ".webp"},
+		{"image/png; charset=utf-8", ".png"},
+		{"unknown/type", ".bin"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.mimeType, func(t *testing.T) {
+			if got := mimeTypeToExt(tt.mimeType); got != tt.wantExt {
+				t.Errorf("mimeTypeToExt(%q) = %q, want %q", tt.mimeType, got, tt.wantExt)
+			}
+		})
+	}
+}
+
+// TestImageExtractionInMarkdown tests that data URLs are handled correctly
+func TestImageExtractionInMarkdown(t *testing.T) {
+	// Test without extraction (default VCTMToMarkdown)
+	v := &vctm.VCTM{
+		VCT:  "https://example.com/credentials/test",
+		Name: "Test Credential",
+		Display: []vctm.DisplayProperties{
+			{
+				Locale: "en-US",
+				Rendering: &vctm.Rendering{
+					Simple: &vctm.SimpleRendering{
+						Logo: &vctm.Logo{
+							URI:     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+							AltText: "Test Logo",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Without extraction, data URLs should be skipped
+	markdown := VCTMToMarkdown(v)
+	if strings.Contains(markdown, "data:image") {
+		t.Error("VCTMToMarkdown() should not include data URLs")
+	}
+	if strings.Contains(markdown, "![Test Logo]") {
+		t.Error("VCTMToMarkdown() should not include markdown image for data URL without extraction")
+	}
+
+	// Test with http URL (should be included)
+	v.Display[0].Rendering.Simple.Logo.URI = "https://example.com/logo.png"
+	markdown = VCTMToMarkdown(v)
+	if !strings.Contains(markdown, "![Test Logo](https://example.com/logo.png)") {
+		t.Error("VCTMToMarkdown() should include HTTP URLs")
+	}
+}
