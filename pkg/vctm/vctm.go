@@ -77,6 +77,9 @@ type ClaimMetadataEntry struct {
 	// Display contains display properties for this claim
 	Display []ClaimDisplay `json:"display,omitempty"`
 
+	// Description is a human-readable description of the claim (for developers)
+	Description string `json:"description,omitempty"`
+
 	// Mandatory indicates if the claim must be present in the issued credential
 	Mandatory bool `json:"mandatory,omitempty"`
 

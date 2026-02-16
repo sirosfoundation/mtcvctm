@@ -82,11 +82,14 @@ func (g *Generator) Generate(parsed *formats.ParsedCredential, cfg *config.Confi
 			claimEntry["path"] = claim.Path
 			if claim.DisplayName != "" {
 				claimEntry["display"] = []map[string]string{
-					{"lang": "en", "label": claim.DisplayName},
+					{"locale": "en-US", "label": claim.DisplayName},
 				}
 			}
 			if claim.Description != "" {
 				claimEntry["description"] = claim.Description
+			}
+			if claim.Mandatory {
+				claimEntry["mandatory"] = true
 			}
 			if claim.SD != "" {
 				claimEntry["sd"] = claim.SD
