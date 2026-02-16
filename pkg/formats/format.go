@@ -18,10 +18,10 @@ type ParsedCredential struct {
 	Name string // Human-readable name
 
 	// Format-specific identifiers (may be derived or explicit)
-	VCT       string // SD-JWT VC type identifier
-	DocType   string // mso_mdoc document type
-	Namespace string // mso_mdoc namespace
-	W3CTypes  []string // W3C VC type array
+	VCT        string   // SD-JWT VC type identifier
+	DocType    string   // mso_mdoc document type
+	Namespace  string   // mso_mdoc namespace
+	W3CTypes   []string // W3C VC type array
 	W3CContext []string // W3C VC @context
 
 	// Description

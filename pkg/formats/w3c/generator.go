@@ -136,12 +136,12 @@ func (g *Generator) deriveContext(parsed *formats.ParsedCredential, cfg *config.
 
 // W3CCredentialSchema represents a W3C VC credential schema
 type W3CCredentialSchema struct {
-	Type              []string           `json:"type"`
-	Context           []string           `json:"@context"`
-	Name              string             `json:"name,omitempty"`
-	Description       string             `json:"description,omitempty"`
-	Display           *DisplayProperties `json:"display,omitempty"`
-	CredentialSchema  *CredentialSchema  `json:"credentialSchema,omitempty"`
+	Type             []string           `json:"type"`
+	Context          []string           `json:"@context"`
+	Name             string             `json:"name,omitempty"`
+	Description      string             `json:"description,omitempty"`
+	Display          *DisplayProperties `json:"display,omitempty"`
+	CredentialSchema *CredentialSchema  `json:"credentialSchema,omitempty"`
 }
 
 // DisplayProperties for credential display
@@ -158,21 +158,21 @@ type CredentialSchema struct {
 
 // SchemaProperty represents a JSON Schema property
 type SchemaProperty struct {
-	Type            string                    `json:"type"`
-	Title           string                    `json:"title,omitempty"`
-	Description     string                    `json:"description,omitempty"`
-	Format          string                    `json:"format,omitempty"`
-	ContentEncoding string                    `json:"contentEncoding,omitempty"`
-	Items           *SchemaProperty           `json:"items,omitempty"`
+	Type            string                     `json:"type"`
+	Title           string                     `json:"title,omitempty"`
+	Description     string                     `json:"description,omitempty"`
+	Format          string                     `json:"format,omitempty"`
+	ContentEncoding string                     `json:"contentEncoding,omitempty"`
+	Items           *SchemaProperty            `json:"items,omitempty"`
 	Properties      map[string]*SchemaProperty `json:"properties,omitempty"`
-	Required        []string                  `json:"required,omitempty"`
+	Required        []string                   `json:"required,omitempty"`
 }
 
 // CredentialSubjectSchema represents the credentialSubject part of the schema
 type CredentialSubjectSchema struct {
-	Type       string                    `json:"type"`
+	Type       string                     `json:"type"`
 	Properties map[string]*SchemaProperty `json:"properties,omitempty"`
-	Required   []string                  `json:"required,omitempty"`
+	Required   []string                   `json:"required,omitempty"`
 }
 
 // Generate produces the W3C VC schema output
