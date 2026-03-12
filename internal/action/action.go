@@ -231,40 +231,75 @@ func parseRepoURL(url string) (owner, name string) {
 
 // SetupVCTMBranch sets up the vctm branch for GitHub Actions
 func SetupVCTMBranch(branchName string, outputDir string) error {
-	// Check if branch exists
-	_, err := runGitCommand("rev-parse", "--verify", branchName)
+	// Save output directory contents to temp location before switching branches
+	tempDir, err := os.MkdirTemp("", "vctm-output-*")
 	if err != nil {
-		// Create orphan branch
-		if _, err := runGitCommand("checkout", "--orphan", branchName); err != nil {
-			return fmt.Errorf("failed to create branch: %w", err)
-		}
-		// Remove all files from index
-		runGitCommand("rm", "-rf", ".")
-	} else {
-		// Checkout existing branch
-		if _, err := runGitCommand("checkout", branchName); err != nil {
-			return fmt.Errorf("failed to checkout branch: %w", err)
-		}
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Copy output directory to temp
+	if err := copyDir(outputDir, tempDir); err != nil {
+		return fmt.Errorf("failed to save output directory: %w", err)
+	}
+
+	// Configure git
+	runGitCommand("config", "--local", "user.email", "action@github.com")
+	runGitCommand("config", "--local", "user.name", "GitHub Action")
+
+	// Create orphan branch (or reset if exists)
+	runGitCommand("checkout", "--orphan", branchName)
+	runGitCommand("rm", "-rf", ".")
+
+	// Copy output contents to repo root (not in outputDir subdirectory)
+	if err := copyDir(tempDir, "."); err != nil {
+		return fmt.Errorf("failed to restore output directory: %w", err)
 	}
 
 	return nil
 }
 
+// copyDir copies a directory recursively
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		dstPath := filepath.Join(dst, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(dstPath, info.Mode())
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dstPath, data, info.Mode())
+	})
+}
+
 // CommitAndPush commits changes and pushes to remote
 func CommitAndPush(message string, branchName string) error {
 	// Add all files
-	if _, err := runGitCommand("add", "."); err != nil {
+	if _, err := runGitCommand("add", "-A"); err != nil {
 		return fmt.Errorf("failed to stage files: %w", err)
 	}
 
 	// Commit
 	if _, err := runGitCommand("commit", "-m", message); err != nil {
 		// May fail if no changes, which is OK
+		fmt.Println("No changes to commit")
 		return nil
 	}
 
-	// Push
-	if _, err := runGitCommand("push", "origin", branchName); err != nil {
+	// Force push (since we're using orphan branch)
+	if _, err := runGitCommand("push", "origin", branchName, "--force"); err != nil {
 		return fmt.Errorf("failed to push: %w", err)
 	}
 
