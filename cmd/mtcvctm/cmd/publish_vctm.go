@@ -31,7 +31,7 @@ to publish without going through the markdown workflow. Only the VCTM format
 is supported (no mso_mdoc or W3C VC conversion).
 
 The command will:
-  1. Find all *.vctm.json files in the input directory
+  1. Find all VCTM JSON files (*.vctm.json, vctm_*.json, vctm-*.json)
   2. Validate each file by parsing it
   3. Copy valid files to the output directory
   4. Generate a .well-known/vctm-registry.json
@@ -176,7 +176,8 @@ func runPublishVCTM(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// findVCTMFiles finds all *.vctm.json files in a directory recursively
+// findVCTMFiles finds all VCTM JSON files in a directory recursively
+// Matches: *.vctm.json, vctm_*.json, vctm-*.json
 func findVCTMFiles(dir string) ([]string, error) {
 	var files []string
 
@@ -196,11 +197,19 @@ func findVCTMFiles(dir string) ([]string, error) {
 
 		// Check for VCTM JSON files
 		name := filepath.Base(path)
-		if strings.HasSuffix(strings.ToLower(name), ".vctm.json") {
-			// Skip files starting with underscore (templates, examples)
-			if strings.HasPrefix(name, "_") {
-				return nil
-			}
+		nameLower := strings.ToLower(name)
+
+		// Skip files starting with underscore (templates, examples)
+		if strings.HasPrefix(name, "_") {
+			return nil
+		}
+
+		// Match: *.vctm.json, vctm_*.json, vctm-*.json
+		isVCTM := strings.HasSuffix(nameLower, ".vctm.json") ||
+			(strings.HasPrefix(nameLower, "vctm_") && strings.HasSuffix(nameLower, ".json")) ||
+			(strings.HasPrefix(nameLower, "vctm-") && strings.HasSuffix(nameLower, ".json"))
+
+		if isVCTM {
 			files = append(files, path)
 		}
 

@@ -18,11 +18,13 @@ func TestFindVCTMFiles(t *testing.T) {
 
 	// Create test files
 	testFiles := []string{
-		"credential1.vctm.json",
-		"subdir/credential2.vctm.json",
-		"other.json",           // Not a VCTM file
-		"_template.vctm.json",  // Should be skipped (starts with _)
-		"readme.md",            // Not a VCTM file
+		"credential1.vctm.json",        // Should match (*.vctm.json)
+		"subdir/credential2.vctm.json", // Should match (*.vctm.json)
+		"vctm_demo.json",               // Should match (vctm_*.json)
+		"vctm-test.json",               // Should match (vctm-*.json)
+		"other.json",                   // Not a VCTM file
+		"_template.vctm.json",          // Should be skipped (starts with _)
+		"readme.md",                    // Not a VCTM file
 	}
 
 	for _, f := range testFiles {
@@ -41,19 +43,25 @@ func TestFindVCTMFiles(t *testing.T) {
 		t.Fatalf("findVCTMFiles() error: %v", err)
 	}
 
-	// Should find exactly 2 files
-	if len(files) != 2 {
-		t.Errorf("findVCTMFiles() found %d files, want 2", len(files))
+	// Should find exactly 4 files
+	if len(files) != 4 {
+		t.Errorf("findVCTMFiles() found %d files, want 4: %v", len(files), files)
 	}
 
 	// Check that the right files were found
-	var foundCred1, foundCred2 bool
+	var foundCred1, foundCred2, foundVctmDemo, foundVctmTest bool
 	for _, f := range files {
 		if strings.HasSuffix(f, "credential1.vctm.json") {
 			foundCred1 = true
 		}
 		if strings.HasSuffix(f, "credential2.vctm.json") {
 			foundCred2 = true
+		}
+		if strings.HasSuffix(f, "vctm_demo.json") {
+			foundVctmDemo = true
+		}
+		if strings.HasSuffix(f, "vctm-test.json") {
+			foundVctmTest = true
 		}
 	}
 
@@ -62,6 +70,12 @@ func TestFindVCTMFiles(t *testing.T) {
 	}
 	if !foundCred2 {
 		t.Error("findVCTMFiles() did not find credential2.vctm.json")
+	}
+	if !foundVctmDemo {
+		t.Error("findVCTMFiles() did not find vctm_demo.json")
+	}
+	if !foundVctmTest {
+		t.Error("findVCTMFiles() did not find vctm-test.json")
 	}
 }
 
