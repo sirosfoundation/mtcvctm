@@ -7,6 +7,7 @@ import (
 
 	"github.com/sirosfoundation/mtcvctm/pkg/config"
 	"github.com/sirosfoundation/mtcvctm/pkg/formats"
+
 	// Import format packages to trigger their init() registration
 	_ "github.com/sirosfoundation/mtcvctm/pkg/formats/vctmfmt"
 )
