@@ -58,6 +58,41 @@ Process all markdown files in a directory:
 mtcvctm batch --input ./credentials --output ./vctm --base-url https://registry.example.com
 ```
 
+### Publish Raw VCTM Files
+
+Publish existing VCTM JSON files without markdown conversion:
+
+```bash
+# Basic usage
+mtcvctm publish-vctm --input ./vctm-files --output ./vctm
+
+# With image processing
+mtcvctm publish-vctm --input ./vctm-files --output ./vctm --inline-images
+
+# In GitHub Action mode
+mtcvctm publish-vctm --github-action --vctm-branch vctm
+```
+
+This command validates and publishes raw VCTM JSON files (matching patterns `*.vctm.json`, `vctm_*.json`, `vctm-*.json`), applies normalization rules, and generates a registry.
+
+### Normalize VCTM Files
+
+Apply normalization rules to fix legacy field names and add missing defaults:
+
+```bash
+# Normalize in place
+mtcvctm normalize credential.vctm.json
+
+# Preview changes without modifying
+mtcvctm normalize --dry-run -v credential.vctm.json
+
+# List available rules
+mtcvctm normalize --list-rules
+
+# Disable specific rules
+mtcvctm normalize --disable-rules remove-empty-description credential.vctm.json
+```
+
 ### GitHub Action Mode
 
 ```bash
@@ -199,6 +234,9 @@ jobs:
 | `vctm-branch` | Branch name for VCTM files | `vctm` |
 | `commit-message` | Commit message for updates | `Update VCTM files [skip ci]` |
 | `no-inline-images` | Use URLs instead of embedding images | `false` |
+| `normalize` | Apply normalization rules | `false` |
+| `disable-rules` | Comma-separated list of rules to disable | `` |
+| `verbose-rules` | Show which normalization rules were applied | `false` |
 
 ### Action Outputs
 
@@ -233,6 +271,69 @@ The tool generates a `.well-known/vctm-registry.json` file:
     }
   ]
 }
+```
+
+## Normalization Rules
+
+mtcvctm includes an extensible rules engine for normalizing VCTM data. Rules can fix legacy field names, add missing required fields, and clean up empty values.
+
+### Built-in Rules
+
+| Rule | Description |
+|------|-------------|
+| `ensure-display-array` | Ensure `display` is an array, wrapping single objects |
+| `rename-lang-to-locale` | Rename legacy `lang` to `locale` in display entries |
+| `rename-lang-to-locale-in-claims` | Rename `lang` to `locale` in claim displays |
+| `set-display-locale-default` | Set display locale to `en-US` if missing |
+| `set-display-name-from-root` | Copy root `name` to display entries if missing |
+| `set-claim-display-locale-default` | Set claim display locale if missing |
+| `remove-empty-svg-template-properties` | Remove empty `properties: {}` from svg_templates |
+| `remove-empty-description` | Remove empty `description` fields |
+
+### Using Normalization
+
+Enable normalization in your workflow:
+
+```yaml
+- uses: sirosfoundation/mtcvctm@v1
+  with:
+    input-dir: ./credentials
+    output-dir: ./vctm
+    normalize: true
+    verbose-rules: true
+```
+
+Or via CLI:
+
+```bash
+# With batch command
+mtcvctm batch --input ./credentials --output ./vctm --normalize --verbose-rules
+
+# With publish-vctm command
+mtcvctm publish-vctm --input ./vctm-files --output ./vctm --verbose-rules
+
+# Normalize standalone
+mtcvctm normalize --dry-run -v credential.vctm.json
+```
+
+### Custom Rules
+
+The rules engine is extensible. Add custom rules by implementing the `Rule` interface:
+
+```go
+import "github.com/sirosfoundation/mtcvctm/pkg/rules"
+
+myRule := rules.NewRule(
+    "my-custom-rule",
+    "Description of what the rule does",
+    func(data map[string]interface{}) (bool, error) {
+        // Transform data, return true if changed
+        return false, nil
+    },
+)
+
+engine := rules.NewEngine()
+engine.Register(myRule)
 ```
 
 ## Development
