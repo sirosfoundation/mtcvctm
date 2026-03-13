@@ -12,19 +12,23 @@ import (
 	"strings"
 
 	"github.com/sirosfoundation/mtcvctm/internal/action"
+	"github.com/sirosfoundation/mtcvctm/pkg/rules"
 	"github.com/sirosfoundation/mtcvctm/pkg/vctm"
 	"github.com/spf13/cobra"
 )
 
 var (
-	publishVCTMInputDir    string
-	publishVCTMOutputDir   string
-	publishVCTMGitHubMode  bool
-	publishVCTMBranch      string
-	publishVCTMCommitMsg   string
-	publishVCTMFetchImages bool
+	publishVCTMInputDir     string
+	publishVCTMOutputDir    string
+	publishVCTMGitHubMode   bool
+	publishVCTMBranch       string
+	publishVCTMCommitMsg    string
+	publishVCTMFetchImages  bool
 	publishVCTMInlineImages bool
-	publishVCTMBaseURL     string
+	publishVCTMBaseURL      string
+	publishVCTMNoNormalize  bool
+	publishVCTMDisableRules string
+	publishVCTMVerboseRules bool
 )
 
 var publishVCTMCmd = &cobra.Command{
@@ -67,6 +71,9 @@ func init() {
 	publishVCTMCmd.Flags().BoolVar(&publishVCTMFetchImages, "fetch-images", false, "Fetch network images and store locally")
 	publishVCTMCmd.Flags().BoolVar(&publishVCTMInlineImages, "inline-images", false, "Inline images as data:image URLs (implies --fetch-images)")
 	publishVCTMCmd.Flags().StringVar(&publishVCTMBaseURL, "base-url", "", "Base URL for rewriting image paths")
+	publishVCTMCmd.Flags().BoolVar(&publishVCTMNoNormalize, "no-normalize", false, "Skip normalization rules")
+	publishVCTMCmd.Flags().StringVar(&publishVCTMDisableRules, "disable-rules", "", "Comma-separated list of rules to disable")
+	publishVCTMCmd.Flags().BoolVar(&publishVCTMVerboseRules, "verbose-rules", false, "Show which normalization rules were applied")
 }
 
 func runPublishVCTM(cmd *cobra.Command, args []string) error {
@@ -107,6 +114,19 @@ func runPublishVCTM(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Initialize rules engine
+	var rulesEngine *rules.Engine
+	if !publishVCTMNoNormalize {
+		rulesEngine = rules.NewEngine()
+		rulesEngine.SetVerbose(publishVCTMVerboseRules)
+		// Disable specified rules
+		if publishVCTMDisableRules != "" {
+			for _, name := range strings.Split(publishVCTMDisableRules, ",") {
+				rulesEngine.Disable(strings.TrimSpace(name))
+			}
+		}
+	}
+
 	var credentials []action.CredentialEntry
 	var validCount, invalidCount int
 
@@ -114,12 +134,37 @@ func runPublishVCTM(cmd *cobra.Command, args []string) error {
 	for _, vctmFile := range vctmFiles {
 		fmt.Printf("Processing: %s\n", vctmFile)
 
-		// Read and validate VCTM JSON
+		// Read VCTM JSON
 		data, err := os.ReadFile(vctmFile)
 		if err != nil {
 			fmt.Printf("  ERROR: failed to read file: %v\n", err)
 			invalidCount++
 			continue
+		}
+
+		// Parse into map for rules processing
+		var dataMap map[string]interface{}
+		if err := json.Unmarshal(data, &dataMap); err != nil {
+			fmt.Printf("  ERROR: invalid JSON: %v\n", err)
+			invalidCount++
+			continue
+		}
+
+		// Apply normalization rules if enabled
+		if rulesEngine != nil {
+			result, err := rulesEngine.Apply(dataMap)
+			if err != nil {
+				fmt.Printf("  WARNING: rules failed: %v\n", err)
+			} else if publishVCTMVerboseRules && result.HasChanges() {
+				fmt.Printf("  Normalized: %s\n", result.String())
+			}
+			// Re-serialize for parsing
+			data, err = json.Marshal(dataMap)
+			if err != nil {
+				fmt.Printf("  ERROR: failed to serialize after normalization: %v\n", err)
+				invalidCount++
+				continue
+			}
 		}
 
 		v, err := vctm.FromJSON(data)
@@ -159,20 +204,13 @@ func runPublishVCTM(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to create output directory for %s: %w", vctmFile, err)
 		}
 
-		if publishVCTMFetchImages {
-			// Write modified VCTM
-			outputData, err := json.MarshalIndent(v, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to serialize VCTM %s: %w", vctmFile, err)
-			}
-			if err := os.WriteFile(outputPath, outputData, 0644); err != nil {
-				return fmt.Errorf("failed to write VCTM %s: %w", vctmFile, err)
-			}
-		} else {
-			// Copy original file
-			if err := copyVCTMFile(vctmFile, outputPath); err != nil {
-				return fmt.Errorf("failed to copy %s: %w", vctmFile, err)
-			}
+		// Write modified VCTM (after normalization or image processing)
+		outputData, err := json.MarshalIndent(v, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to serialize VCTM %s: %w", vctmFile, err)
+		}
+		if err := os.WriteFile(outputPath, outputData, 0644); err != nil {
+			return fmt.Errorf("failed to write VCTM %s: %w", vctmFile, err)
 		}
 		fmt.Printf("  -> Published: %s\n", outputPath)
 

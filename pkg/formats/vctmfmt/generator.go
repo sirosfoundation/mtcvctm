@@ -52,10 +52,13 @@ func (g *Generator) Generate(parsed *formats.ParsedCredential, cfg *config.Confi
 	}
 	output["vct"] = vct
 
-	// Optional: name, description
-	if parsed.Name != "" {
-		output["name"] = parsed.Name
+	// Required: name (must not be empty)
+	if parsed.Name == "" {
+		return nil, fmt.Errorf("vctm: name is required and must not be empty")
 	}
+	output["name"] = parsed.Name
+
+	// Optional: description
 	if parsed.Description != "" {
 		output["description"] = parsed.Description
 	}
@@ -170,9 +173,14 @@ func (g *Generator) Generate(parsed *formats.ParsedCredential, cfg *config.Confi
 		display["rendering"] = rendering
 	}
 
-	if len(display) > 0 {
-		output["display"] = []map[string]interface{}{display}
-	}
+	// Add locale to display (REQUIRED per spec)
+	display["locale"] = cfg.Language
+
+	// Add name to display (REQUIRED per spec)
+	display["name"] = parsed.Name
+
+	// Always include display array since locale and name are required
+	output["display"] = []map[string]interface{}{display}
 
 	return formats.FormatJSON(output)
 }

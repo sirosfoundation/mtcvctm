@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,7 @@ import (
 	_ "github.com/sirosfoundation/mtcvctm/pkg/formats/vctmfmt"
 	_ "github.com/sirosfoundation/mtcvctm/pkg/formats/w3c"
 	"github.com/sirosfoundation/mtcvctm/pkg/parser"
+	"github.com/sirosfoundation/mtcvctm/pkg/rules"
 	"github.com/spf13/cobra"
 )
 
@@ -26,6 +28,9 @@ var (
 	batchCommitMsg      string
 	batchNoInlineImages bool
 	batchFormatFlag     string
+	batchNormalize      bool
+	batchDisableRules   string
+	batchVerboseRules   bool
 )
 
 var batchCmd = &cobra.Command{
@@ -61,6 +66,9 @@ func init() {
 	batchCmd.Flags().StringVar(&batchCommitMsg, "commit-message", "Update VCTM files", "Commit message for GitHub Action mode")
 	batchCmd.Flags().BoolVar(&batchNoInlineImages, "no-inline-images", false, "Use URLs instead of embedding images as data URLs")
 	batchCmd.Flags().StringVarP(&batchFormatFlag, "format", "f", "vctm", "Output format(s): vctm, mddl, w3c, all (comma-separated)")
+	batchCmd.Flags().BoolVar(&batchNormalize, "normalize", false, "Apply normalization rules to fix legacy field names and add defaults")
+	batchCmd.Flags().StringVar(&batchDisableRules, "disable-rules", "", "Comma-separated list of normalization rules to disable")
+	batchCmd.Flags().BoolVar(&batchVerboseRules, "verbose-rules", false, "Show which normalization rules were applied")
 }
 
 func runBatch(cmd *cobra.Command, args []string) error {
@@ -68,6 +76,18 @@ func runBatch(cmd *cobra.Command, args []string) error {
 	formatNames, err := formats.ParseFormats(batchFormatFlag)
 	if err != nil {
 		return err
+	}
+
+	// Initialize rules engine if normalization is enabled
+	var rulesEngine *rules.Engine
+	if batchNormalize {
+		rulesEngine = rules.NewEngine()
+		rulesEngine.SetVerbose(batchVerboseRules)
+		if batchDisableRules != "" {
+			for _, name := range strings.Split(batchDisableRules, ",") {
+				rulesEngine.Disable(strings.TrimSpace(name))
+			}
+		}
 	}
 
 	// Find all markdown files
@@ -124,6 +144,23 @@ func runBatch(cmd *cobra.Command, args []string) error {
 		// Write each format output
 		for formatName, data := range outputs {
 			outputPath := filepath.Join(batchOutputDir, parser.OutputFileName(baseName, formatName))
+
+			// Apply normalization rules to VCTM format if enabled
+			if rulesEngine != nil && formatName == "vctm" {
+				var dataMap map[string]interface{}
+				if err := json.Unmarshal(data, &dataMap); err == nil {
+					result, err := rulesEngine.Apply(dataMap)
+					if err != nil {
+						fmt.Printf("  WARNING: normalization failed: %v\n", err)
+					} else {
+						if batchVerboseRules && result.HasChanges() {
+							fmt.Printf("  Normalized: %s\n", result.String())
+						}
+						// Re-serialize with proper formatting
+						data, _ = json.MarshalIndent(dataMap, "", "  ")
+					}
+				}
+			}
 
 			// Ensure output subdirectory exists
 			if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {

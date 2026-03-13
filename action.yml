@@ -39,6 +39,18 @@ inputs:
     description: 'Output formats (comma-separated): vctm, mddl, w3c, all'
     required: false
     default: 'vctm'
+  normalize:
+    description: 'Apply normalization rules to fix legacy field names and add defaults'
+    required: false
+    default: 'false'
+  disable-rules:
+    description: 'Comma-separated list of normalization rules to disable'
+    required: false
+    default: ''
+  verbose-rules:
+    description: 'Show which normalization rules were applied'
+    required: false
+    default: 'false'
 
 outputs:
   registry-path:
@@ -71,6 +83,17 @@ runs:
           NO_INLINE_FLAG="--no-inline-images"
         fi
         
+        NORMALIZE_FLAGS=""
+        if [ "${{ inputs.normalize }}" = "true" ]; then
+          NORMALIZE_FLAGS="--normalize"
+          if [ -n "${{ inputs.disable-rules }}" ]; then
+            NORMALIZE_FLAGS="$NORMALIZE_FLAGS --disable-rules '${{ inputs.disable-rules }}'"
+          fi
+          if [ "${{ inputs.verbose-rules }}" = "true" ]; then
+            NORMALIZE_FLAGS="$NORMALIZE_FLAGS --verbose-rules"
+          fi
+        fi
+        
         ${{ github.action_path }}/mtcvctm batch \
           --input "${{ inputs.input-dir }}" \
           --output "${{ inputs.output-dir }}" \
@@ -78,7 +101,8 @@ runs:
           --vctm-branch "${{ inputs.vctm-branch }}" \
           --commit-message "${{ inputs.commit-message }}" \
           --format "${{ inputs.formats }}" \
-          $NO_INLINE_FLAG
+          $NO_INLINE_FLAG \
+          $NORMALIZE_FLAGS
         
         echo "registry-path=${{ inputs.output-dir }}/.well-known/vctm-registry.json" >> $GITHUB_OUTPUT
 
