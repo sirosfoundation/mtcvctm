@@ -810,3 +810,232 @@ A test credential.
 		t.Error("Missing given_name claim in VCTM output")
 	}
 }
+
+func TestParser_imageToLogo_URLBased(t *testing.T) {
+	// Test imageToLogo when InlineImages is false (URL-based)
+	tmpDir := t.TempDir()
+	imgPath := filepath.Join(tmpDir, "logo.png")
+	if err := os.WriteFile(imgPath, []byte{0x89, 0x50, 0x4E, 0x47}, 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	cfg := &config.Config{
+		InlineImages: false,
+		BaseURL:      "https://example.com",
+	}
+	p := NewParser(cfg)
+
+	img := ImageRef{
+		Path:         "images/logo.png",
+		AbsolutePath: imgPath,
+		AltText:      "Logo",
+	}
+
+	logo := p.imageToLogo(img)
+
+	// URI should be a full URL, not a data URL
+	if hasPrefix(logo.URI, "data:") {
+		t.Errorf("imageToLogo() URI should not be a data URL, got %q", logo.URI[:50])
+	}
+	if !hasPrefix(logo.URI, "https://example.com") {
+		t.Errorf("imageToLogo() URI = %q, want URL starting with https://example.com", logo.URI)
+	}
+
+	// Should have integrity hash
+	if logo.URIIntegrity == "" {
+		t.Error("imageToLogo() should have URIIntegrity for URL-based images")
+	}
+	if !hasPrefix(logo.URIIntegrity, "sha256-") {
+		t.Errorf("URIIntegrity = %q, want sha256- prefix", logo.URIIntegrity)
+	}
+
+	if logo.AltText != "Logo" {
+		t.Errorf("AltText = %q, want 'Logo'", logo.AltText)
+	}
+}
+
+func TestParser_imageToLogo_NoBaseURL(t *testing.T) {
+	// Test imageToLogo when no BaseURL is configured
+	cfg := &config.Config{
+		InlineImages: false,
+		BaseURL:      "",
+	}
+	p := NewParser(cfg)
+
+	img := ImageRef{
+		Path:    "images/logo.png",
+		AltText: "Logo",
+	}
+
+	logo := p.imageToLogo(img)
+
+	// Without base URL, should use relative path
+	if logo.URI != "images/logo.png" {
+		t.Errorf("URI = %q, want 'images/logo.png'", logo.URI)
+	}
+
+	// No integrity without base URL
+	if logo.URIIntegrity != "" {
+		t.Errorf("URIIntegrity should be empty without BaseURL, got %q", logo.URIIntegrity)
+	}
+}
+
+func TestParser_buildRendering_WithSVG(t *testing.T) {
+	tmpDir := t.TempDir()
+	svgPath := filepath.Join(tmpDir, "template.svg")
+	svgContent := []byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`)
+	if err := os.WriteFile(svgPath, svgContent, 0644); err != nil {
+		t.Fatalf("Failed to create SVG file: %v", err)
+	}
+
+	cfg := &config.Config{
+		BaseURL: "https://example.com/registry",
+	}
+	p := NewParser(cfg)
+
+	parsed := &ParsedMarkdown{
+		Images: []ImageRef{
+			{Path: "template.svg", AbsolutePath: svgPath, AltText: "Template"},
+		},
+		Metadata: map[string]string{
+			"background_color": "\"#ffffff\"",
+			"text_color":       "\"#000000\"",
+		},
+	}
+
+	rendering := p.buildRendering(parsed)
+
+	if rendering == nil {
+		t.Fatal("buildRendering returned nil")
+	}
+
+	// Check simple rendering
+	if rendering.Simple == nil {
+		t.Fatal("Simple rendering is nil")
+	}
+	if rendering.Simple.BackgroundColor != "#ffffff" {
+		t.Errorf("BackgroundColor = %q, want #ffffff", rendering.Simple.BackgroundColor)
+	}
+	if rendering.Simple.TextColor != "#000000" {
+		t.Errorf("TextColor = %q, want #000000", rendering.Simple.TextColor)
+	}
+
+	// Check SVG templates
+	if len(rendering.SVGTemplates) != 1 {
+		t.Errorf("len(SVGTemplates) = %d, want 1", len(rendering.SVGTemplates))
+	} else {
+		if !hasPrefix(rendering.SVGTemplates[0].URI, "https://example.com") {
+			t.Errorf("SVGTemplates[0].URI = %q, want URL", rendering.SVGTemplates[0].URI)
+		}
+	}
+}
+
+func TestParser_buildRendering_NoBaseURL(t *testing.T) {
+	// When no BaseURL and there are images, should return nil
+	cfg := &config.Config{
+		BaseURL: "",
+	}
+	p := NewParser(cfg)
+
+	parsed := &ParsedMarkdown{
+		Images: []ImageRef{
+			{Path: "logo.png", AltText: "Logo"},
+		},
+		Metadata: map[string]string{},
+	}
+
+	rendering := p.buildRendering(parsed)
+
+	if rendering != nil {
+		t.Error("buildRendering should return nil when no BaseURL and has images")
+	}
+}
+
+func TestParser_buildRendering_NoContent(t *testing.T) {
+	cfg := &config.Config{
+		BaseURL: "https://example.com",
+	}
+	p := NewParser(cfg)
+
+	parsed := &ParsedMarkdown{
+		Images:   []ImageRef{},
+		Metadata: map[string]string{},
+	}
+
+	rendering := p.buildRendering(parsed)
+
+	if rendering != nil {
+		t.Error("buildRendering should return nil when no rendering content")
+	}
+}
+
+func TestParser_buildRendering_BackgroundImage(t *testing.T) {
+	cfg := &config.Config{
+		BaseURL: "https://example.com",
+	}
+	p := NewParser(cfg)
+
+	parsed := &ParsedMarkdown{
+		Images: []ImageRef{},
+		Metadata: map[string]string{
+			"background_image": "\"https://example.com/bg.png\"",
+		},
+	}
+
+	rendering := p.buildRendering(parsed)
+
+	if rendering == nil {
+		t.Fatal("buildRendering returned nil")
+	}
+	if rendering.Simple == nil {
+		t.Fatal("Simple rendering is nil")
+	}
+	if rendering.Simple.BackgroundImage == nil {
+		t.Fatal("BackgroundImage is nil")
+	}
+	if rendering.Simple.BackgroundImage.URI != "https://example.com/bg.png" {
+		t.Errorf("BackgroundImage.URI = %q", rendering.Simple.BackgroundImage.URI)
+	}
+}
+
+func TestParser_buildRendering_InlineSVG(t *testing.T) {
+	tmpDir := t.TempDir()
+	svgPath := filepath.Join(tmpDir, "template.svg")
+	svgContent := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="50"/></svg>`)
+	if err := os.WriteFile(svgPath, svgContent, 0644); err != nil {
+		t.Fatalf("Failed to create SVG file: %v", err)
+	}
+
+	cfg := &config.Config{
+		BaseURL:      "https://example.com",
+		InlineImages: true,
+	}
+	p := NewParser(cfg)
+
+	parsed := &ParsedMarkdown{
+		Images: []ImageRef{
+			{Path: "template.svg", AbsolutePath: svgPath, AltText: "Template"},
+		},
+		Metadata: map[string]string{},
+	}
+
+	rendering := p.buildRendering(parsed)
+
+	if rendering == nil {
+		t.Fatal("buildRendering returned nil")
+	}
+
+	if len(rendering.SVGTemplates) != 1 {
+		t.Fatalf("len(SVGTemplates) = %d, want 1", len(rendering.SVGTemplates))
+	}
+
+	// Should be a data URL when InlineImages is true
+	if !hasPrefix(rendering.SVGTemplates[0].URI, "data:image/svg+xml;base64,") {
+		t.Errorf("SVGTemplates[0].URI = %q, want data URL", rendering.SVGTemplates[0].URI)
+	}
+
+	// No integrity for inline images
+	if rendering.SVGTemplates[0].URIIntegrity != "" {
+		t.Errorf("URIIntegrity should be empty for inline images, got %q", rendering.SVGTemplates[0].URIIntegrity)
+	}
+}

@@ -279,3 +279,179 @@ func TestEngineDisableRule(t *testing.T) {
 		t.Error("lang should not be renamed when rule is disabled")
 	}
 }
+
+func TestNewEmptyEngine(t *testing.T) {
+	engine := NewEmptyEngine()
+	if len(engine.Rules()) != 0 {
+		t.Errorf("NewEmptyEngine should have no rules, got %d", len(engine.Rules()))
+	}
+
+	// Should still be able to apply (does nothing)
+	data := map[string]interface{}{"test": "value"}
+	result, err := engine.Apply(data)
+	if err != nil {
+		t.Fatalf("Apply on empty engine failed: %v", err)
+	}
+	if result.HasChanges() {
+		t.Error("Empty engine should not make changes")
+	}
+}
+
+func TestEngineEnableRule(t *testing.T) {
+	engine := NewEngine()
+
+	// Disable and then re-enable a rule
+	engine.Disable("rename-lang-to-locale")
+	engine.Enable("rename-lang-to-locale")
+
+	data := map[string]interface{}{
+		"display": []interface{}{
+			map[string]interface{}{
+				"lang": "en-US",
+			},
+		},
+	}
+
+	result, err := engine.Apply(data)
+	if err != nil {
+		t.Fatalf("engine.Apply failed: %v", err)
+	}
+
+	// Rule should have been applied
+	found := false
+	for _, name := range result.Applied {
+		if name == "rename-lang-to-locale" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("rename-lang-to-locale should be in applied list after Enable")
+	}
+}
+
+func TestEngineSetVerbose(t *testing.T) {
+	engine := NewEngine()
+	engine.SetVerbose(true)
+
+	// Verbose mode shouldn't affect behavior, just logging
+	data := map[string]interface{}{
+		"display": []interface{}{
+			map[string]interface{}{
+				"lang": "en-US",
+			},
+		},
+	}
+
+	result, err := engine.Apply(data)
+	if err != nil {
+		t.Fatalf("engine.Apply failed: %v", err)
+	}
+	if !result.HasChanges() {
+		t.Error("Expected changes from verbose engine")
+	}
+}
+
+func TestEngineRules(t *testing.T) {
+	engine := NewEngine()
+	rules := engine.Rules()
+
+	if len(rules) == 0 {
+		t.Error("NewEngine should have built-in rules")
+	}
+
+	// Check that each rule has a name and description
+	for _, rule := range rules {
+		if rule.Name() == "" {
+			t.Error("Rule should have a name")
+		}
+		if rule.Description() == "" {
+			t.Errorf("Rule %s should have a description", rule.Name())
+		}
+	}
+}
+
+func TestResultString(t *testing.T) {
+	tests := []struct {
+		name    string
+		result  *Result
+		want    string
+		wantSub string
+	}{
+		{
+			name:   "no changes",
+			result: &Result{Applied: []string{}, Skipped: []string{}},
+			want:   "No rules applied",
+		},
+		{
+			name:    "with changes",
+			result:  &Result{Applied: []string{"rule-one", "rule-two"}, Skipped: []string{}},
+			wantSub: "rule-one",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.result.String()
+			if tt.want != "" && got != tt.want {
+				t.Errorf("String() = %q, want %q", got, tt.want)
+			}
+			if tt.wantSub != "" && !contains(got, tt.wantSub) {
+				t.Errorf("String() = %q, want to contain %q", got, tt.wantSub)
+			}
+		})
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstr(s, substr))
+}
+
+func containsSubstr(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRuleFuncDescription(t *testing.T) {
+	rule := NewRule("test-rule", "A test description", func(data map[string]interface{}) (bool, error) {
+		return false, nil
+	})
+
+	if rule.Name() != "test-rule" {
+		t.Errorf("Name() = %q, want test-rule", rule.Name())
+	}
+	if rule.Description() != "A test description" {
+		t.Errorf("Description() = %q, want 'A test description'", rule.Description())
+	}
+}
+
+func TestEngineRegisterCustomRule(t *testing.T) {
+	engine := NewEmptyEngine()
+
+	customRule := NewRule("custom-rule", "Adds a custom field", func(data map[string]interface{}) (bool, error) {
+		data["custom"] = "value"
+		return true, nil
+	})
+
+	engine.Register(customRule)
+
+	if len(engine.Rules()) != 1 {
+		t.Errorf("Expected 1 rule, got %d", len(engine.Rules()))
+	}
+
+	data := map[string]interface{}{}
+	result, err := engine.Apply(data)
+	if err != nil {
+		t.Fatalf("Apply failed: %v", err)
+	}
+	if !result.HasChanges() {
+		t.Error("Expected changes from custom rule")
+	}
+	if data["custom"] != "value" {
+		t.Errorf("custom = %v, want 'value'", data["custom"])
+	}
+}
