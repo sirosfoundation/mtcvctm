@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o mtcvctm ./cmd/mtcvctm
 
 # Final stage - minimal image
-FROM alpine:3.19
+FROM alpine:3.23
 
 RUN apk add --no-cache ca-certificates git
 
