@@ -46,7 +46,8 @@ The command will:
   2. Validate each file by parsing it
   3. Optionally fetch and process network images
   4. Copy valid files to the output directory
-  5. Generate a .well-known/vctm-registry.json
+  5. Copy co-located schema-meta files (*.schema-meta.yaml, *.schema-meta.json)
+  6. Generate a .well-known/vctm-registry.json
 
 Image Processing Options:
   --fetch-images     Download network image resources and store locally
@@ -251,6 +252,23 @@ func runPublishVCTM(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no valid VCTM files found")
 	}
 
+	// Copy co-located schema-meta files
+	schemaMetaFiles, err := findSchemaMetaFiles(publishVCTMInputDir)
+	if err != nil {
+		fmt.Printf("Warning: failed to find schema-meta files: %v\n", err)
+	}
+	for _, smFile := range schemaMetaFiles {
+		relPath, _ := filepath.Rel(publishVCTMInputDir, smFile)
+		outputPath := filepath.Join(publishVCTMOutputDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+			return fmt.Errorf("failed to create output directory for %s: %w", smFile, err)
+		}
+		if err := copyVCTMFile(smFile, outputPath); err != nil {
+			return fmt.Errorf("failed to copy schema-meta %s: %w", smFile, err)
+		}
+		fmt.Printf("  -> Copied schema-meta: %s\n", outputPath)
+	}
+
 	// Generate registry
 	if err := action.GenerateRegistry(publishVCTMOutputDir, credentials); err != nil {
 		return fmt.Errorf("failed to generate registry: %w", err)
@@ -308,6 +326,37 @@ func findVCTMFiles(dir string) ([]string, error) {
 			(strings.HasPrefix(nameLower, "vctm-") && strings.HasSuffix(nameLower, ".json"))
 
 		if isVCTM {
+			files = append(files, path)
+		}
+
+		return nil
+	})
+
+	return files, err
+}
+
+// findSchemaMetaFiles finds all schema-meta files in a directory recursively.
+// Matches: *.schema-meta.yaml, *.schema-meta.json
+func findSchemaMetaFiles(dir string) ([]string, error) {
+	var files []string
+
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			name := info.Name()
+			if strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		name := filepath.Base(path)
+		nameLower := strings.ToLower(name)
+
+		if strings.HasSuffix(nameLower, ".schema-meta.yaml") || strings.HasSuffix(nameLower, ".schema-meta.json") {
 			files = append(files, path)
 		}
 

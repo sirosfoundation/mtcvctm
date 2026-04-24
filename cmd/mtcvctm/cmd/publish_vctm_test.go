@@ -277,3 +277,87 @@ func TestPublishVCTMWithInvalidFile(t *testing.T) {
 		t.Errorf("Registry has %d credentials, want 1", len(registry.Credentials))
 	}
 }
+
+// TestFindSchemaMetaFiles tests finding schema-meta files in a directory
+func TestFindSchemaMetaFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	testFiles := []string{
+		"cred1.schema-meta.yaml",        // Should match
+		"cred2.schema-meta.json",        // Should match
+		"subdir/cred3.schema-meta.yaml", // Should match
+		"other.yaml",                    // Not a schema-meta file
+		"cred4.vctm.json",              // Not a schema-meta file
+	}
+
+	for _, f := range testFiles {
+		path := filepath.Join(tmpDir, f)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("attestation_los: low\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	files, err := findSchemaMetaFiles(tmpDir)
+	if err != nil {
+		t.Fatalf("findSchemaMetaFiles() error: %v", err)
+	}
+
+	if len(files) != 3 {
+		t.Errorf("findSchemaMetaFiles() found %d files, want 3: %v", len(files), files)
+	}
+}
+
+// TestPublishVCTMCopiesSchemaMetaFiles tests that publish-vctm copies
+// co-located schema-meta files to the output directory
+func TestPublishVCTMCopiesSchemaMetaFiles(t *testing.T) {
+	inputDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	// Create a valid VCTM file
+	vctmContent := `{"vct": "urn:test:1", "name": "Test"}`
+	if err := os.WriteFile(filepath.Join(inputDir, "test.vctm.json"), []byte(vctmContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a co-located schema-meta file
+	schemaMeta := "attestation_los: high\nbinding_type: cnf\n"
+	if err := os.WriteFile(filepath.Join(inputDir, "test.schema-meta.yaml"), []byte(schemaMeta), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set flags
+	publishVCTMInputDir = inputDir
+	publishVCTMOutputDir = outputDir
+	publishVCTMGitHubMode = false
+	publishVCTMNoNormalize = true
+	publishVCTMFetchImages = false
+	publishVCTMInlineImages = false
+
+	err := runPublishVCTM(nil, nil)
+	if err != nil {
+		t.Fatalf("runPublishVCTM() error: %v", err)
+	}
+
+	// VCTM should be copied
+	if _, err := os.Stat(filepath.Join(outputDir, "test.vctm.json")); os.IsNotExist(err) {
+		t.Error("VCTM file should be copied to output")
+	}
+
+	// Schema-meta should be copied
+	smPath := filepath.Join(outputDir, "test.schema-meta.yaml")
+	if _, err := os.Stat(smPath); os.IsNotExist(err) {
+		t.Error("Schema-meta file should be copied to output")
+	}
+
+	// Verify content
+	data, err := os.ReadFile(smPath)
+	if err != nil {
+		t.Fatalf("failed to read copied schema-meta: %v", err)
+	}
+	if string(data) != schemaMeta {
+		t.Errorf("schema-meta content = %q, want %q", string(data), schemaMeta)
+	}
+}
