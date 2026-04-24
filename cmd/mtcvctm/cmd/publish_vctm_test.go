@@ -287,7 +287,7 @@ func TestFindSchemaMetaFiles(t *testing.T) {
 		"cred2.schema-meta.json",        // Should match
 		"subdir/cred3.schema-meta.yaml", // Should match
 		"other.yaml",                    // Not a schema-meta file
-		"cred4.vctm.json",              // Not a schema-meta file
+		"cred4.vctm.json",               // Not a schema-meta file
 	}
 
 	for _, f := range testFiles {
